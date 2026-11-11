@@ -8,6 +8,8 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::engine::Indexer;
 use crate::engine::harness::{failed, interesting, plain};
+use crate::fixtures::hash_of;
+use crate::reorg::Verdict;
 
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -102,4 +104,23 @@ async fn says_why_it_stopped() {
     assert_eq!(stopped.len(), 1, "{lines:?}");
     assert!(stopped[0].contains("ERROR"), "{stopped:?}");
     assert!(stopped[0].contains("p1: unfixable"), "{stopped:?}");
+}
+
+#[tokio::test]
+async fn warns_that_a_reorg_made_blocks_stale() {
+    let mut fixture = plain();
+    fixture.reorg_detector.queue([Verdict::Reorg {
+        first_invalid_block: 98,
+        last_invalid_block: 100,
+        last_valid_hash: hash_of(b'a', 97),
+    }]);
+    fixture.processors[0].cancel_on_call(1, fixture.cancel.clone());
+
+    let lines = logged(&mut fixture.indexer).await;
+
+    let stale = line(&lines, "blocks are stale");
+    assert_eq!(stale.len(), 1, "{lines:?}");
+    for field in ["WARN", "depth=3", "phase=\"inspect\"", "at_block=100"] {
+        assert!(stale[0].contains(field), "{field} in {stale:?}");
+    }
 }

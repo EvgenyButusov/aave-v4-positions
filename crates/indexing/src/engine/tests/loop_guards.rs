@@ -224,26 +224,43 @@ fn waits_by_what_the_iteration_did() {
 async fn the_loop_waits_its_backoff_between_attempts() {
     let mut fixture = plain();
     fixture.processors[0].refuse_with("provider down");
-
-    let cancel = fixture.cancel.clone();
-    let stopper = tokio::spawn(async move {
-        // Past the first backoff and into the second, so at least one was
-        // waited out in full.
-        tokio::time::sleep(std::time::Duration::from_millis(900)).await;
-        cancel.cancel();
-    });
+    fixture.processors[0].cancel_on_call(2, fixture.cancel.clone());
 
     let started = tokio::time::Instant::now();
     fixture.indexer.run().await;
-    stopper.await.unwrap();
 
-    assert!(
-        started.elapsed() >= std::time::Duration::from_millis(500),
-        "it did not wait: {:?}",
-        started.elapsed()
+    assert_eq!(started.elapsed(), std::time::Duration::from_millis(500));
+    assert_eq!(fixture.processors[0].calls().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_loop_does_not_wait_after_progress() {
+    let mut fixture = plain();
+    fixture.processors[0].cancel_on_call(3, fixture.cancel.clone());
+
+    let started = tokio::time::Instant::now();
+    fixture.indexer.run().await;
+
+    assert_eq!(started.elapsed(), std::time::Duration::ZERO);
+    assert_eq!(
+        fixture.processors[0].ranges(),
+        vec![
+            (START, START),
+            (START + 1, START + 1),
+            (START + 2, START + 2)
+        ]
     );
-    assert!(
-        fixture.processors[0].calls().len() >= 2,
-        "it stopped after one attempt"
-    );
+}
+
+#[tokio::test]
+async fn a_retry_counts_as_a_consecutive_failure() {
+    let mut fixture = plain();
+    fixture.processors[0].refuse_with("provider down");
+
+    let _ = fixture.indexer.run_once().await;
+    let _ = fixture.indexer.run_once().await;
+
+    let snapshot = fixture.status.snapshot();
+    assert_eq!(snapshot.state, IndexerState::Retrying);
+    assert_eq!(snapshot.consecutive_failures, 2);
 }

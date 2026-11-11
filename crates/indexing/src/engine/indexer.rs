@@ -96,13 +96,8 @@ impl Indexer {
     /// seconds is not an iteration — emitting a span for each would fill a trace
     /// backend with nothing.
     pub async fn run_once(&mut self) -> Iteration {
-        if self.status.is_failed() {
-            return Iteration::Failed {
-                reason: self
-                    .status
-                    .failure_reason()
-                    .unwrap_or_else(|| "indexing stopped".to_owned()),
-            };
+        if let Some(reason) = self.status.failure() {
+            return Iteration::Failed { reason };
         }
 
         let span = tracing::info_span!(

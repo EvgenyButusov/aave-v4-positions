@@ -63,7 +63,7 @@ pub struct IndexerSnapshot {
 /// behind it.
 ///
 /// **Not purely a reporting surface**, and it would be dishonest to name it as
-/// one: the loop reads [`is_failed`](Self::is_failed) to know it is finished and
+/// one: the loop reads [`failure`](Self::failure) to know it is finished and
 /// [`consecutive_failures`](Self::consecutive_failures) to size its backoff.
 /// Separating the facts from the facts worth reporting would mean keeping the
 /// same values twice.
@@ -128,14 +128,14 @@ impl IndexerStatus {
         }
     }
 
+    /// Why the loop stopped, once it has; a retry's reason is not a failure.
     #[must_use]
-    pub fn is_failed(&self) -> bool {
-        self.state().state == IndexerState::Failed
-    }
+    pub fn failure(&self) -> Option<String> {
+        let state = self.state();
 
-    #[must_use]
-    pub fn failure_reason(&self) -> Option<String> {
-        self.state().reason.clone()
+        (state.state == IndexerState::Failed)
+            .then(|| state.reason.clone())
+            .flatten()
     }
 
     #[must_use]

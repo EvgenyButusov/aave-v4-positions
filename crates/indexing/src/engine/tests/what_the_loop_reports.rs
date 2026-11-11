@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
-use opentelemetry_sdk::metrics::data::AggregatedMetrics;
+use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
 
 use crate::engine::harness::{Fixture, HEAD, MAX_RANGE, failed, narrowing, plain, retry};
 use crate::fixtures::hash_of;
 use crate::reorg::Verdict;
+
 /// **Resets before flushing.** `get_finished_metrics` accumulates every
 /// flush, so without this a second read sees the first collection's points
 /// as well and `[0]` is whichever is stale.
@@ -77,7 +78,7 @@ fn points(fixture: &Fixture, name: &str) -> Vec<(Vec<String>, u64)> {
             _ => None,
         })
         .flat_map(|data| match data {
-            opentelemetry_sdk::metrics::data::MetricData::Gauge(gauge) => gauge
+            MetricData::Gauge(gauge) => gauge
                 .data_points()
                 .map(|point| {
                     (
@@ -91,7 +92,7 @@ fn points(fixture: &Fixture, name: &str) -> Vec<(Vec<String>, u64)> {
                     )
                 })
                 .collect::<Vec<_>>(),
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => sum
+            MetricData::Sum(sum) => sum
                 .data_points()
                 .map(|point| {
                     (
@@ -218,4 +219,31 @@ async fn records_how_deep_a_reorg_reached() {
         .any(|metric| metric.name() == "indexer.reorg.depth");
 
     assert!(found);
+}
+
+#[tokio::test]
+async fn times_each_iteration() {
+    let mut fixture = plain();
+
+    let _ = fixture.indexer.run_once().await;
+
+    let seconds: Vec<f64> = collected(&fixture)
+        .iter()
+        .flat_map(|batch| batch.scope_metrics().collect::<Vec<_>>())
+        .flat_map(|scope| scope.metrics().collect::<Vec<_>>())
+        .filter(|metric| metric.name() == "indexer.iteration.duration")
+        .filter_map(|metric| match metric.data() {
+            AggregatedMetrics::F64(MetricData::Histogram(histogram)) => Some(
+                histogram
+                    .data_points()
+                    .map(|point| point.sum())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+
+    assert_eq!(seconds.len(), 1, "{seconds:?}");
+    assert!(seconds[0] > 0.0, "{seconds:?}");
 }

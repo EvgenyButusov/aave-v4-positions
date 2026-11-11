@@ -6,24 +6,9 @@ use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::engine::Indexer;
-use crate::engine::harness::{START, failed, plain, retry};
+use crate::engine::harness::{START, failed, interesting, plain, retry};
 use crate::fixtures::hash_of;
 use crate::reorg::Verdict;
-
-/// Makes every callsite in this crate interesting, once.
-///
-/// `tracing` caches callsite interest from the *global* subscriber, which is
-/// `NoSubscriber` here and answers "never" — so without this, whether a
-/// scoped subscriber sees a span depends on which case ran first.
-fn interesting() {
-    static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-    ONCE.get_or_init(|| {
-        let _ = tracing::subscriber::set_global_default(
-            tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
-        );
-    });
-}
 
 /// One iteration, with its spans. `with_subscriber` on the future rather
 /// than `with_default` around it, because this is already inside a runtime

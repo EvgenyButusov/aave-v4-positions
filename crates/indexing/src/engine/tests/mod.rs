@@ -1,6 +1,7 @@
 //! The loop, driven one iteration at a time through scripted ports.
 
 mod dispatch_shape;
+mod logs;
 mod loop_guards;
 mod over_the_real_detector;
 mod processors;

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::chain::FakeChainClient;
 use crate::cursor::Cursor;
@@ -141,4 +142,19 @@ pub(crate) fn reason(result: &Iteration) -> String {
         Iteration::Retry { reason } | Iteration::Failed { reason } => reason.clone(),
         other => panic!("expected a reason: {other:?}"),
     }
+}
+
+/// Makes every callsite in this crate interesting, once.
+///
+/// `tracing` caches callsite interest from the *global* subscriber, which is
+/// `NoSubscriber` here and answers "never" — so without this, whether a
+/// scoped subscriber sees a span depends on which case ran first.
+pub(crate) fn interesting() {
+    static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+    ONCE.get_or_init(|| {
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
+        );
+    });
 }

@@ -33,6 +33,10 @@ struct State {
 
     /// Checked before the queue and never spent: a defect does not take turns.
     refuse: Option<String>,
+
+    /// Stops the loop from inside its `nth` call, which a timer cannot do for a
+    /// loop that never yields.
+    cancel_on: Option<(usize, CancellationToken)>,
 }
 
 impl ScriptedBlockProcessor {
@@ -54,6 +58,10 @@ impl ScriptedBlockProcessor {
 
     pub(crate) fn refuse_with(&self, reason: &str) {
         self.state().refuse = Some(reason.to_owned());
+    }
+
+    pub(crate) fn cancel_on_call(&self, nth: usize, cancel: CancellationToken) {
+        self.state().cancel_on = Some((nth, cancel));
     }
 
     pub(crate) fn calls(&self) -> Vec<Call> {
@@ -85,6 +93,11 @@ impl ScriptedBlockProcessor {
             to,
             cancelled: cancel.is_cancelled(),
         });
+        if let Some((nth, token)) = &state.cancel_on
+            && state.calls.len() == *nth
+        {
+            token.cancel();
+        }
 
         if let Some(reason) = &state.refuse {
             return Err(reason.clone().into());

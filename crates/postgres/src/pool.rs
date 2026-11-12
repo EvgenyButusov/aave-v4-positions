@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use deadpool_postgres::{Manager, ManagerConfig, RecyclingMethod, Runtime, Timeouts};
+use env::{Env, Invalid};
 use tokio_postgres::config::SslMode;
 
 use crate::error::Error;
@@ -46,9 +47,42 @@ impl Default for Limits {
             wait: Duration::from_millis(250),
             create: Duration::from_secs(2),
             recycle: Duration::from_secs(1),
-            statement: Deadline::After(Duration::from_secs(5)),
+            statement: Deadline::After(STATEMENT),
         }
     }
+}
+
+const STATEMENT: Duration = Duration::from_secs(5);
+
+impl Limits {
+    /// The `POSTGRES_*` limits, each defaulting to [`Limits::default`].
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`], naming the first variable that could not be read.
+    pub fn read(env: &Env) -> Result<Self, Invalid> {
+        let default = Self::default();
+
+        Ok(Self {
+            max_size: env.size("POSTGRES_MAX_CONNECTIONS", default.max_size, 1, 1_000)?,
+            wait: env.deadline("POSTGRES_WAIT_MS", default.wait)?,
+            create: env.deadline("POSTGRES_CONNECT_MS", default.create)?,
+            recycle: env.deadline("POSTGRES_RECYCLE_MS", default.recycle)?,
+            statement: Deadline::After(env.deadline("POSTGRES_STATEMENT_MS", STATEMENT)?),
+        })
+    }
+}
+
+/// `POSTGRES_URL`, which every binary here connects with.
+///
+/// # Errors
+///
+/// [`Invalid`] when it is not a URL.
+pub fn read_url(env: &Env) -> Result<String, Invalid> {
+    env.url(
+        "POSTGRES_URL",
+        "postgres://postgres@localhost:5432/postgres",
+    )
 }
 
 /// Builds the pool every caller here connects through, and the only way in.
@@ -202,5 +236,68 @@ mod tests {
     #[test]
     fn is_sized_for_the_deployment_and_not_for_the_driver_it_came_from() {
         assert_eq!(Limits::default().max_size, 4);
+    }
+
+    fn read(pairs: &[(&str, &str)]) -> Result<Limits, Invalid> {
+        Limits::read(&pairs.iter().copied().collect())
+    }
+
+    #[test]
+    fn an_empty_environment_reads_the_default_limits() {
+        let limits = read(&[]).expect("defaults stand alone");
+        let default = Limits::default();
+
+        assert_eq!(
+            (
+                limits.max_size,
+                limits.wait,
+                limits.create,
+                limits.recycle,
+                limits.statement
+            ),
+            (
+                default.max_size,
+                default.wait,
+                default.create,
+                default.recycle,
+                default.statement
+            )
+        );
+    }
+
+    #[test]
+    fn reads_every_limit_and_the_url() {
+        let pairs = [
+            ("POSTGRES_URL", "postgres://aave@postgres:5432/aave"),
+            ("POSTGRES_MAX_CONNECTIONS", "8"),
+            ("POSTGRES_WAIT_MS", "100"),
+            ("POSTGRES_CONNECT_MS", "300"),
+            ("POSTGRES_RECYCLE_MS", "400"),
+            ("POSTGRES_STATEMENT_MS", "500"),
+        ];
+        let limits = read(&pairs).expect("every value is valid");
+
+        assert_eq!(limits.max_size, 8);
+        assert_eq!(
+            [limits.wait, limits.create, limits.recycle],
+            [100, 300, 400].map(Duration::from_millis)
+        );
+        assert_eq!(
+            limits.statement,
+            Deadline::After(Duration::from_millis(500))
+        );
+        assert_eq!(
+            read_url(&pairs.into_iter().collect()).unwrap(),
+            "postgres://aave@postgres:5432/aave"
+        );
+    }
+
+    #[test]
+    fn refuses_a_url_that_is_not_one_rather_than_booting_degraded() {
+        let refusal = read_url(&[("POSTGRES_URL", "postgres.local")].into_iter().collect())
+            .expect_err("expected a refusal")
+            .to_string();
+
+        assert!(refusal.contains("POSTGRES_URL: must be a URL"), "{refusal}");
     }
 }

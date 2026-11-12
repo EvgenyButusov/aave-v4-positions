@@ -8,6 +8,8 @@
 
 use std::collections::HashMap;
 
+use crate::Env;
+
 /// Where a process's variables are read from. Owned here rather than by a
 /// `main` that mutates the environment before anything reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,10 +36,10 @@ impl Source {
 
     /// Every variable this process can see, by whichever route it allows.
     #[must_use]
-    pub fn read(self) -> HashMap<String, String> {
+    pub fn read(self) -> Env {
         let process = std::env::vars().collect();
 
-        match self {
+        let vars = match self {
             Self::Process => process,
             // The usual error is that there is no file. A malformed one is
             // silent too, which is a local problem with a local symptom.
@@ -45,7 +47,9 @@ impl Source {
                 Ok(file) => merge(process, file.flatten()),
                 Err(_) => process,
             },
-        }
+        };
+
+        vars.into_iter().collect()
     }
 
     /// Absent is local, as the TypeScript's `NODE_ENV` also has it.

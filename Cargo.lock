@@ -700,6 +700,7 @@ name = "clickhouse-client"
 version = "0.0.0"
 dependencies = [
  "clickhouse",
+ "env",
  "hyper-util",
  "thiserror",
  "tokio",
@@ -2466,6 +2467,7 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "deadpool-postgres",
+ "env",
  "rustls",
  "rustls-native-certs",
  "thiserror",
@@ -3432,6 +3434,7 @@ name = "telemetry"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "env",
  "http",
  "opentelemetry",
  "opentelemetry-appender-tracing",

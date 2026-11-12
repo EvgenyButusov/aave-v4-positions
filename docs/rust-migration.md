@@ -247,7 +247,7 @@ graph exactly, so they stay `[[bin]]` targets of `bins/indexer`.
 | NestJS DI + modules | explicit composition in `main.rs` | 32 `@Injectable`, 43 `forRootAsync` and 55 `@Inject` all disappear. Ports become trait objects rather than generics, so the composition root reads like the module graph it replaces — `Box<dyn Trait>` where one owner holds one, which is what `bins/api` does with its four, and `Arc` only where something genuinely shares one. An async port therefore carries `#[async_trait]`: `async fn` in a trait is stable and still not dyn compatible, measured on 1.96, and a boxed future per call is the price of the seam |
 | `@nestjs/platform-express` | `axum` + `tower-http` | |
 | `@nestjs/swagger` | `utoipa` + `utoipa-axum` | derive-based, and it reads doc comments — so it maps onto the *field docs* rather than onto the decorators, and `positions.dto.ts`'s 367 lines of restated shape have no counterpart. `utoipa-axum` registers a route with its documentation in one call, which is what the drift guard was going to have to check by hand. **`utoipa-swagger-ui` is not taken**: it embeds the whole 11 MB `swagger-ui-dist` to ship the 2 MB a page loads, and the image copies three files instead |
-| `zod` | hand-rolled `crates/env` | five files. Abort-on-invalid-config is preserved. **Not `serde` + `garde` + `figment`, as this row said before any of it was written**: crates.io's `crates_io_env_vars` is one reader per variable over a map, which is what a test wants and what names the one variable it refused |
+| `zod` | hand-rolled `crates/env` | five files. Abort-on-invalid-config is preserved. **Not `serde` + `garde` + `figment`, as this row said before any of it was written**: crates.io's `crates_io_env_vars` is one reader per variable over a map, which is what a test wants and what names the one variable it refused. `Env` owns its map, so a case is `pairs.into_iter().collect()` |
 | `viem` | `alloy` | `alloy-provider`, `alloy-sol-types`, `alloy-transport-http` |
 | `@clickhouse/client` | `clickhouse` crate | 19 call sites, all `JSONEachRow` today; inserts move to RowBinary and `JSONEachRow` stays only where a `body` column is genuinely JSON |
 | `postgres` (postgres.js) | `tokio-postgres` + `deadpool-postgres` | see [Port notes](#port-notes) |
@@ -443,9 +443,16 @@ prose inside a comment.
 `OTEL_*` was read by the preloaded SDK before Nest existed, which is why
 [Configuration](design-notes.md#configuration) carried a paragraph explaining that one group of
 variables did not go through Zod. In Rust `main()` initialises telemetry and then the app, from one
-parsed config, and both the exception and the explanation are gone. `OTEL_SERVICE_NAME` is the second
-variable in `bins/api/src/config.rs` with no default, refused on the same grounds as the cursor
-secret.
+parsed config, and both the exception and the explanation are gone. `OTEL_SERVICE_NAME` has no
+default, refused on the same grounds as the cursor secret.
+
+**Each shared group is read by the crate it configures**: `telemetry::Settings::read`,
+`clickhouse_client::Config::read`, `postgres::Limits::read` and `postgres::read_url`, each over the
+map the binary hands down, never `std::env`. A binary's `config.rs` reads only its own variables and
+overrides what it needs differently — `migrate` keeps its ten-minute execution limit. The
+`CLICKHOUSE_*` group had been written out in `bins/api` and `bins/migrate` and was about to be
+written a third time in `bins/indexer`; one reader means a variable cannot be renamed in two of
+three places.
 
 ### `chain_id` is 64 bits, in one place
 
@@ -1153,6 +1160,7 @@ named beside the code it shaped:
 | [quickwit `health_check_api/handler.rs`](https://github.com/quickwit-oss/quickwit/blob/main/quickwit/quickwit-serve/src/health_check_api/handler.rs) | a probe handler takes its real collaborators; no registry to resolve |
 | [linkerd2-proxy `admin/server/readiness.rs`](https://github.com/linkerd/linkerd2-proxy/blob/main/linkerd/app/admin/src/server/readiness.rs) | readiness is a shared value rather than a service |
 | [linkerd2-proxy `app/src/env.rs`](https://github.com/linkerd/linkerd2-proxy/blob/main/linkerd/app/src/env.rs) | parse every variable, defer the failure; take the environment as a map so a test can supply one |
+| [`deadpool-postgres` 0.14.1 README](https://github.com/bikeshedder/deadpool/blob/master/postgres/README.md) · [`opentelemetry-otlp` 0.31.1 `exporter/http`](https://github.com/open-telemetry/opentelemetry-rust/blob/main/opentelemetry-otlp/src/exporter/http/mod.rs) | a component owns the names of its own variables: deadpool's `Config::from_env`, and the exporter resolving `OTEL_EXPORTER_OTLP_ENDPOINT` itself. Taken with linkerd's map in place of the process environment |
 | [influxdb `models/health.rs`](https://github.com/influxdata/influxdb/blob/main/core/influxdb2_client/src/models/health.rs) | `skip_serializing_if` — a passing check serialises to two keys |
 | [crates.io `crates_io_env_vars`](https://github.com/rust-lang/crates.io/blob/main/crates/crates_io_env_vars/src/lib.rs) | hand-rolled env reading over a config crate, and `dotenvy` beside it |
 | [crates.io `src/middleware.rs`](https://github.com/rust-lang/crates.io/blob/main/src/middleware.rs) | `CatchPanicLayer`, so a panicking handler answers rather than dropping the socket |

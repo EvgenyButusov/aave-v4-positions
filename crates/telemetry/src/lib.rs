@@ -1,7 +1,7 @@
 //! Traces, metrics and logs over OTLP, and the subscriber they pass through.
 //!
 //! stdout keeps its one JSON object per line; the OTLP copy is additive.
-//! [`Settings`] arrives parsed — nothing here reads the environment.
+//! [`Settings::read`] takes the binary's map; nothing here reads `std::env`.
 
 mod context;
 mod panics;

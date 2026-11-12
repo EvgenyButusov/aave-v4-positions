@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The `CLICKHOUSE_*` group, read from the map a binary hands over.
+env.workspace = true
 # Only this crate builds against the driver; everyone else goes through it.
 #
 # `opentelemetry` is what makes the `clickhouse.query` span it already emits a

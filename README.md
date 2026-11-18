@@ -150,7 +150,8 @@ to a third party. Point it at your own node with `RPC_URLS=https://your-node doc
 or set `INDEXER_AUTOSTART=false` for probes only. Ports, chain, start block and everything else are
 environment variables — the full table is in
 [Configuration](docs/design-notes.md#configuration), and both `.env.example` files are annotated:
-[`.env.example`](.env.example) for the Rust binaries, `apps/indexer/.env.example` for the indexer.
+[`.env.example`](.env.example) for what the Rust binaries share, one beside each Rust binary for
+its own, and `apps/indexer/.env.example` for the indexer.
 
 ### Backfilling a range
 
@@ -174,7 +175,7 @@ Outside Docker it is `pnpm backfill --from … --to …`.
 
 ```bash
 pnpm install
-cp .env.example .env && cp apps/indexer/.env.example apps/indexer/.env
+cp .env.example .env && cp bins/api/.env.example bins/api/.env && cp apps/indexer/.env.example apps/indexer/.env
 cargo run --release -p migrate                     # schema is its own step, never done at boot
 pnpm dev:indexer                                   # and, in another shell
 cargo run --release -p api

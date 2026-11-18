@@ -85,7 +85,7 @@ FROM alpine:${ALPINE_VERSION} AS api
 # The binary and the three files the API documentation's viewer loads. Those are
 # the only things read from disk at runtime — the whole configuration is
 # environment variables, and the OpenAPI document itself is generated in process.
-# `API_DOCS_ASSETS` defaults to the path below, so nothing has to be set for it.
+# `DOCS_ASSETS` defaults to the path below, so nothing has to be set for it.
 COPY --from=rust-build /src/target/release/api /usr/local/bin/api
 COPY --from=docs-assets /out /usr/share/api/docs
 USER nobody

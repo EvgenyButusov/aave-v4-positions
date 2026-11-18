@@ -165,7 +165,7 @@ impl Settings {
     ///
     /// [`env::Invalid`], naming the first variable that could not be read.
     fn from_env() -> Result<Self, env::Invalid> {
-        Self::parse(&env::Source::from_env().read())
+        Self::parse(&env::Source::from_env().read(env!("CARGO_MANIFEST_DIR")))
     }
 
     fn parse(env: &env::Env) -> Result<Self, env::Invalid> {

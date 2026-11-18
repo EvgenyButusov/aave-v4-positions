@@ -47,38 +47,33 @@ impl Config {
     ///
     /// [`Invalid`], naming the first variable that could not be read.
     pub(crate) fn from_env() -> Result<Self, Invalid> {
-        Self::parse(&Source::from_env().read())
+        Self::parse(&Source::from_env().read(env!("CARGO_MANIFEST_DIR")))
     }
 
     fn parse(env: &Env) -> Result<Self, Invalid> {
         Ok(Self {
             telemetry: telemetry::Settings::read(env)?,
-            host: env.address("INDEXER_HOST", "0.0.0.0")?,
-            port: env.port("INDEXER_PORT", 3001)?,
+            host: env.address("HOST", "0.0.0.0")?,
+            port: env.port("PORT", 3001)?,
             grace: Duration::from_secs(env.seconds("SHUTDOWN_GRACE_SECONDS", 10, 300)?),
             chain: indexing::Options {
                 chain_id: env.required_as::<ChainId>("CHAIN_ID")?,
-                start_block: env.count(
-                    "INDEXER_START_BLOCK",
-                    CORE_HUB_GENESIS_BLOCK,
-                    0,
-                    u64::MAX,
-                )?,
-                max_range_size: env.count("INDEXER_MAX_RANGE_SIZE", 1_000, 1, 100_000)?,
-                poll_interval: env.millis("INDEXER_POLL_INTERVAL_MS", 4_000, 100, 600_000)?,
+                start_block: env.count("START_BLOCK", CORE_HUB_GENESIS_BLOCK, 0, u64::MAX)?,
+                max_range_size: env.count("MAX_RANGE_SIZE", 1_000, 1, 100_000)?,
+                poll_interval: env.millis("POLL_INTERVAL_MS", 4_000, 100, 600_000)?,
             },
             finality_depth: env.count("FINALITY_DEPTH", 128, 0, 10_000)?,
             rpc: Rpc {
                 urls: env.urls("RPC_URLS")?,
-                timeout: env.millis("INDEXER_RPC_TIMEOUT_MS", 10_000, 100, 120_000)?,
+                timeout: env.millis("RPC_TIMEOUT_MS", 10_000, 100, 120_000)?,
             },
             stall_threshold: env.millis(
-                "INDEXER_STALL_THRESHOLD_MS",
+                "STALL_THRESHOLD_MS",
                 300_000,
                 1_000,
                 MAX_STALL_THRESHOLD_MS,
             )?,
-            autostart: env.flag("INDEXER_AUTOSTART", true)?,
+            autostart: env.flag("AUTOSTART", true)?,
             spoke: env.address_20("MAIN_SPOKE_ADDRESS", MAIN_SPOKE)?,
             hub: env.address_20("CORE_HUB_ADDRESS", CORE_HUB)?,
             clickhouse: clickhouse_client::Config::read(env)?,
@@ -192,10 +187,10 @@ mod tests {
 
     #[test]
     fn the_first_bad_variable_in_reading_order_is_the_one_reported() {
-        let refusal = refusal(&[("INDEXER_PORT", "0"), ("FINALITY_DEPTH", "-1")]);
+        let refusal = refusal(&[("PORT", "0"), ("FINALITY_DEPTH", "-1")]);
 
         assert!(
-            refusal.ends_with(r#"INDEXER_PORT: must be 1..=65535, got "0""#),
+            refusal.ends_with(r#"PORT: must be 1..=65535, got "0""#),
             "{refusal}"
         );
     }
@@ -203,35 +198,31 @@ mod tests {
     #[test]
     fn holds_every_bound_a_deployment_is_already_held_to() {
         let bounds = [
-            ("INDEXER_MAX_RANGE_SIZE", "0", "must be 1..=100000"),
-            ("INDEXER_MAX_RANGE_SIZE", "100001", "must be 1..=100000"),
+            ("MAX_RANGE_SIZE", "0", "must be 1..=100000"),
+            ("MAX_RANGE_SIZE", "100001", "must be 1..=100000"),
             (
-                "INDEXER_POLL_INTERVAL_MS",
+                "POLL_INTERVAL_MS",
                 "99",
                 "must be 100..=600000 milliseconds",
             ),
             (
-                "INDEXER_POLL_INTERVAL_MS",
+                "POLL_INTERVAL_MS",
                 "600001",
                 "must be 100..=600000 milliseconds",
             ),
             ("FINALITY_DEPTH", "10001", "must be 0..=10000"),
+            ("RPC_TIMEOUT_MS", "99", "must be 100..=120000 milliseconds"),
             (
-                "INDEXER_RPC_TIMEOUT_MS",
-                "99",
-                "must be 100..=120000 milliseconds",
-            ),
-            (
-                "INDEXER_RPC_TIMEOUT_MS",
+                "RPC_TIMEOUT_MS",
                 "120001",
                 "must be 100..=120000 milliseconds",
             ),
             (
-                "INDEXER_STALL_THRESHOLD_MS",
+                "STALL_THRESHOLD_MS",
                 "999",
                 "must be 1000..=86400000 milliseconds",
             ),
-            ("INDEXER_START_BLOCK", "-1", "must be 0..="),
+            ("START_BLOCK", "-1", "must be 0..="),
             ("SHUTDOWN_GRACE_SECONDS", "301", "must be 0..=300"),
             (
                 "MAIN_SPOKE_ADDRESS",
@@ -255,18 +246,18 @@ mod tests {
     #[test]
     fn reads_every_variable_it_declares_and_one_from_each_group() {
         let config = configured(&[
-            ("INDEXER_HOST", "127.0.0.1"),
-            ("INDEXER_PORT", "3101"),
+            ("HOST", "127.0.0.1"),
+            ("PORT", "3101"),
             ("SHUTDOWN_GRACE_SECONDS", "5"),
             ("CHAIN_ID", "11297108109"),
-            ("INDEXER_START_BLOCK", "0"),
-            ("INDEXER_MAX_RANGE_SIZE", "50"),
-            ("INDEXER_POLL_INTERVAL_MS", "100"),
+            ("START_BLOCK", "0"),
+            ("MAX_RANGE_SIZE", "50"),
+            ("POLL_INTERVAL_MS", "100"),
             ("FINALITY_DEPTH", "0"),
             ("RPC_URLS", "https://a.example, https://b.example"),
-            ("INDEXER_RPC_TIMEOUT_MS", "120000"),
-            ("INDEXER_STALL_THRESHOLD_MS", "1000"),
-            ("INDEXER_AUTOSTART", "false"),
+            ("RPC_TIMEOUT_MS", "120000"),
+            ("STALL_THRESHOLD_MS", "1000"),
+            ("AUTOSTART", "false"),
             (
                 "MAIN_SPOKE_ADDRESS",
                 "0x00000000000000000000000000000000000000AA",

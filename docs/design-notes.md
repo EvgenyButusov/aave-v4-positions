@@ -204,12 +204,12 @@ pnpm install
 That also installs the git hooks (via the `prepare` script). Then give each service an environment:
 
 ```bash
-cp .env.example .env && cp apps/indexer/.env.example apps/indexer/.env
+cp .env.example .env && cp bins/api/.env.example bins/api/.env && cp apps/indexer/.env.example apps/indexer/.env
 ```
 
-Two files because there are two readers. The root one is the Rust binaries' — the reader walks up
-from the working directory, so one file at the root serves a `cargo run` from anywhere in the tree —
-and `apps/indexer/` holds the indexer's. Both are annotated line by line; [Configuration](#configuration)
+The root file is what the Rust binaries share, and each Rust binary reads its own beside its
+`Cargo.toml` first — found from where it was built, so a `cargo run` works from anywhere in the tree,
+and a variable only one binary reads needs no prefix. `apps/indexer/` holds the Node indexer's. Both are annotated line by line; [Configuration](#configuration)
 is the same list as prose.
 
 The indexer needs a ClickHouse to write to (see [Prerequisites](#prerequisites)) with the schema
@@ -429,9 +429,9 @@ operator who knows OpenTelemetry should not have to learn our names for its vari
 `service.name`, so an unnamed service produces telemetry that is present, plausible and impossible to
 attribute — noticed for the first time during an incident.
 
-**API** — `API_HOST`, `API_PORT` (3000), `API_GLOBAL_PREFIX` (`api`), `API_DOCS_PATH` (`docs`),
-`API_DOCS_ASSETS` (`/usr/share/api/docs`), `API_SYNC_STALE_AFTER_SECONDS` (60),
-`API_PRICE_STALE_AFTER_SECONDS` (300), and `POSITIONS_CURSOR_SECRET` — _required_, at least 32
+**API** — `HOST`, `PORT` (3000), `GLOBAL_PREFIX` (`api`), `DOCS_PATH` (`docs`),
+`DOCS_ASSETS` (`/usr/share/api/docs`), `SYNC_STALE_AFTER_SECONDS` (60),
+`PRICE_STALE_AFTER_SECONDS` (300), and `POSITIONS_CURSOR_SECRET` — _required_, at least 32
 characters, and the same on every replica. It
 signs pagination cursors, so a default would be a key every deployment shares, and a per-process one
 gives pagination that fails only under load.
@@ -441,7 +441,8 @@ the oracle is read once a minute. The price one measures how long since **we** l
 never how long since a feed last moved — an hour without an `AnswerUpdated` is ordinary Chainlink
 behaviour (§7.5), and a threshold set from feed cadence would mark healthy feeds stale forever.
 
-**Indexer** — `INDEXER_HOST`, `INDEXER_PORT` (3001), plus the chain configuration:
+**Indexer** — `INDEXER_HOST`, `INDEXER_PORT` (3001), plus the chain configuration. The Rust
+indexer reads the same set without the `INDEXER_` prefix:
 
 | variable                       | default    |                                                                                                                      |
 | ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -486,8 +487,10 @@ table the API reads rather than reaching for a node while answering. Provider ca
 vary, though: measured `eth_getLogs` ranges across public endpoints run from 50 blocks to 10,000, and
 some serve no history at all, which is why the provider list is ordered and the range size adapts.
 
-Each reader's `.env.example` is the annotated list: [`.env.example`](../.env.example) for the Rust
-binaries, `apps/indexer/.env.example` for the indexer.
+Each reader's `.env.example` is the annotated list: [`.env.example`](../.env.example) for what the
+Rust binaries share, [`bins/api/.env.example`](../bins/api/.env.example) and
+[`bins/indexer/.env.example`](../bins/indexer/.env.example) for each one's own, and
+`apps/indexer/.env.example` for the Node indexer.
 
 ## API documentation
 
@@ -1685,7 +1688,7 @@ nothing to that database. It rides on every page rather than the first,
 because a page whose `sync` differs from the previous one is the honest signal that the indexer
 advanced mid-walk. `age_seconds` is computed by the database that wrote the timestamp, so clock skew
 between hosts cannot report a healthy indexer as stale. `stale` is that age against
-`API_SYNC_STALE_AFTER_SECONDS` — deliberately not the indexer's `INDEXER_STALL_THRESHOLD_MS`, which
+`SYNC_STALE_AFTER_SECONDS` — deliberately not the indexer's `INDEXER_STALL_THRESHOLD_MS`, which
 answers a different question: one decides whether to drain traffic from a pod, the other tells a
 reader their numbers are a minute old.
 

@@ -454,6 +454,13 @@ overrides what it needs differently — `migrate` keeps its ten-minute execution
 written a third time in `bins/indexer`; one reader means a variable cannot be renamed in two of
 three places.
 
+**A binary's own variables carry no prefix of its name.** Each reads a `.env` beside its
+`Cargo.toml` before the shared one at the root, found from `CARGO_MANIFEST_DIR` rather than the
+working directory, so `bins/api` reads `PORT` and `bins/indexer` reads `PORT` without colliding in
+one file. A deployment injects each process's environment separately and reads no file at all. The
+Rust indexer's names therefore stop matching the Node indexer's `INDEXER_*`; its deployment's
+variables are renamed at its cutover, not before.
+
 ### `chain_id` is 64 bits, in one place
 
 Every Postgres table has always declared `chain_id bigint`, with the reason written on the column:
@@ -1094,7 +1101,7 @@ three rows are `indexer`, `clickhouse` and `postgres` in that order. It does not
 with no chain client to give it, the status stays `starting` and the stall check answers `up`, which
 is what a TypeScript pod with `INDEXER_AUTOSTART=false` reports. Every chain variable is validated
 at boot and logged once, the providers by count, so 3b wires values that have already been refused
-when wrong. One bound is new: `INDEXER_STALL_THRESHOLD_MS` gains a one-day ceiling, where the
+when wrong. One bound is new: `STALL_THRESHOLD_MS` gains a one-day ceiling, where the
 TypeScript had none.
 
 What 3b still owes 3a is the part nothing here can prove: that the loop's ordering survives a real

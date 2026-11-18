@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The `POSTGRES_*` group, read from the map a binary hands over.
+env.workspace = true
 # `ToSql` writes into a `BytesMut` and neither the driver nor `postgres-types`
 # re-exports the crate it comes from, so an impl outside the driver has to name
 # it. Already in the graph underneath `tokio-postgres`.

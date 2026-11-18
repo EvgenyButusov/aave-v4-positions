@@ -154,54 +154,37 @@ fn report(database: &str, applied: &Report) {
     }
 }
 
-/// Which two servers to migrate.
-///
-/// The environment is read here and nowhere else: the database crates take
-/// their configuration as parameters, so a case needs no global state.
+/// Which two servers to migrate, through the same group readers `bins/api` uses.
 struct Settings {
     clickhouse: clickhouse_client::Config,
     postgres: String,
 }
 
 impl Settings {
-    /// Through `env`, which is what `bins/api` reads with — so a `.env` that
-    /// points the API at one database no longer leaves the migrator pointed at
-    /// another, and a URL that will not parse is refused before any DDL runs.
-    ///
     /// # Errors
     ///
     /// [`env::Invalid`], naming the first variable that could not be read.
     fn from_env() -> Result<Self, env::Invalid> {
-        let vars = env::Source::from_env().read();
-        let env = env::Env::new(&vars);
+        Self::parse(&env::Source::from_env().read())
+    }
 
+    fn parse(env: &env::Env) -> Result<Self, env::Invalid> {
         Ok(Self {
             clickhouse: clickhouse_client::Config {
-                url: env.url("CLICKHOUSE_URL", "http://localhost:8123")?,
-                transport_security: if env.flag("CLICKHOUSE_ALLOW_INSECURE_HTTP", false)? {
-                    clickhouse_client::TransportSecurity::AllowInsecureHttp
-                } else {
-                    clickhouse_client::TransportSecurity::RequireTls
-                },
-                database: env.text("CLICKHOUSE_DATABASE", "default"),
-                user: env.text("CLICKHOUSE_USER", "default"),
-                // Empty is legitimate: `CLICKHOUSE_SKIP_USER_SETUP` leaves no
-                // password, which is how the test and CI instances run.
-                password: env.text("CLICKHOUSE_PASSWORD", ""),
                 // Generous, for the reason `MIGRATING` gives.
                 max_execution: Duration::from_secs(600),
+                ..clickhouse_client::Config::read(env)?
             },
-            postgres: env.url(
-                "POSTGRES_URL",
-                "postgres://postgres@localhost:5432/postgres",
-            )?,
+            postgres: postgres::read_url(env)?,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::union;
+    use std::time::Duration;
+
+    use super::{Settings, union};
     use migrations::{CLICKHOUSE, POSTGRES};
 
     /// Every label parses as `V{version}__{name}`. A typo in the corpus fails here
@@ -229,5 +212,17 @@ mod tests {
 
             assert_eq!(versions, expected, "versions must ascend and not repeat");
         }
+    }
+
+    #[test]
+    fn a_migration_outlasts_the_request_paths_execution_limit() {
+        let settings = Settings::parse(
+            &[("CLICKHOUSE_MAX_EXECUTION_MS", "1000")]
+                .into_iter()
+                .collect(),
+        )
+        .expect("a valid environment");
+
+        assert_eq!(settings.clickhouse.max_execution, Duration::from_secs(600));
     }
 }

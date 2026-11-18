@@ -11,8 +11,20 @@ use std::time::Duration;
 
 use tracing::level_filters::LevelFilter;
 
-pub struct Env<'a> {
-    vars: &'a HashMap<String, String>,
+/// Owns its map, so a case is `[(key, value)].into_iter().collect()` and touches no global state.
+pub struct Env {
+    vars: HashMap<String, String>,
+}
+
+impl<K: Into<String>, V: Into<String>> FromIterator<(K, V)> for Env {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(pairs: I) -> Self {
+        Self {
+            vars: pairs
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -52,15 +64,12 @@ const LEVELS: [(&str, LevelFilter); 7] = [
     ("silent", LevelFilter::OFF),
 ];
 
+/// Ten minutes: a bound against the absurd, and not a units check.
+const DEADLINE_CEILING_MS: u64 = 600_000;
+
 const FLAGS: [(&str, bool); 4] = [("true", true), ("1", true), ("false", false), ("0", false)];
 
-impl<'a> Env<'a> {
-    /// A map rather than the environment, so a case touches no global state.
-    #[must_use]
-    pub fn new(vars: &'a HashMap<String, String>) -> Self {
-        Self { vars }
-    }
-
+impl Env {
     #[must_use]
     pub fn text(&self, key: &str, default: &str) -> String {
         self.raw(key).unwrap_or(default).to_owned()
@@ -201,6 +210,18 @@ impl<'a> Env<'a> {
         }
     }
 
+    /// [`Env::millis`] under the one ceiling every deadline in this workspace shares.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`] outside `1..=600000`.
+    pub fn deadline(&self, key: &str, default: Duration) -> Result<Duration, Invalid> {
+        match self.raw(key) {
+            None => Ok(default),
+            Some(_) => self.millis(key, 0, 1, DEADLINE_CEILING_MS),
+        }
+    }
+
     /// # Errors
     ///
     /// [`Invalid`] outside `0.0..=1.0`.
@@ -262,8 +283,7 @@ impl<'a> Env<'a> {
         self.one_of(key, value, table)
     }
 
-    /// Borrowed from the map, not `self`, so a value can be named in its error.
-    fn raw(&self, key: &str) -> Option<&'a str> {
+    fn raw(&self, key: &str) -> Option<&str> {
         // An empty value is a value: `CLICKHOUSE_PASSWORD=` means no password,
         // and treating it as absent would substitute a default nobody asked for.
         self.vars.get(key).map(String::as_str)
@@ -291,20 +311,13 @@ mod tests {
     //! consumer's `config` to prove.
     use super::*;
 
-    fn vars(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-            .collect()
-    }
-
-    fn read<T>(pairs: &[(&str, &str)], read: impl FnOnce(&Env<'_>) -> T) -> T {
-        read(&Env::new(&vars(pairs)))
+    fn read<T>(pairs: &[(&str, &str)], read: impl FnOnce(&Env) -> T) -> T {
+        read(&pairs.iter().copied().collect())
     }
 
     fn refusal<T: fmt::Debug>(
         pairs: &[(&str, &str)],
-        reader: impl FnOnce(&Env<'_>) -> Result<T, Invalid>,
+        reader: impl FnOnce(&Env) -> Result<T, Invalid>,
     ) -> String {
         read(pairs, reader)
             .expect_err("expected a refusal")
@@ -396,6 +409,20 @@ mod tests {
         assert!(bad("30001").contains("must be 1..=30000 milliseconds"));
         assert!(bad("250ms").contains("must be 1..=30000 milliseconds"));
         assert!(bad("-1").contains("must be 1..=30000 milliseconds"));
+    }
+
+    #[test]
+    fn a_deadline_holds_from_a_millisecond_to_ten_minutes() {
+        let read = |raw: &str| {
+            read(&[("WAIT", raw)], |env| {
+                env.deadline("WAIT", Duration::from_millis(250))
+            })
+        };
+
+        assert_eq!(read("1").unwrap(), Duration::from_millis(1));
+        assert_eq!(read("600000").unwrap(), Duration::from_secs(600));
+        assert!(read("0").is_err());
+        assert!(read("600001").is_err());
     }
 
     #[test]

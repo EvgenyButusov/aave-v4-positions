@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The `OTEL_*` group, read from the map a binary hands over.
+env.workspace = true
 # The API the exporters are built against, and the global registries a library
 # writes through — `clickhouse`'s own spans read the propagator set here.
 opentelemetry = "0.31.0"

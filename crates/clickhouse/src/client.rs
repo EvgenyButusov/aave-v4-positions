@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use env::{Env, Invalid};
+
 use crate::Error;
 use hyper_util::{
     client::legacy::{Client as HyperClient, connect::HttpConnector},
@@ -20,10 +22,8 @@ pub enum TransportSecurity {
 /// HTTP interface takes and what every deployment of it hands you. Postgres gets
 /// a URL for the opposite reason — see `postgres::build_pool`.
 ///
-/// Taken as parameters rather than read from the environment: a library that
-/// reaches for `std::env` cannot be used twice in one process with two different
-/// configurations, and cannot be tested without setting global state. The binary
-/// parses the environment and passes the result down.
+/// Never `std::env`: [`Config::read`] takes the binary's map, so two configurations can share a
+/// process and a case sets no global state.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub url: String,
@@ -37,6 +37,28 @@ pub struct Config {
     /// `max_execution_time`. Without it the HTTP connection is the only thing
     /// that ends a pathological query.
     pub max_execution: Duration,
+}
+
+impl Config {
+    /// The `CLICKHOUSE_*` group, under the names every binary here shares.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`], naming the first variable that could not be read.
+    pub fn read(env: &Env) -> Result<Self, Invalid> {
+        Ok(Self {
+            url: env.url("CLICKHOUSE_URL", "http://localhost:8123")?,
+            transport_security: if env.flag("CLICKHOUSE_ALLOW_INSECURE_HTTP", false)? {
+                TransportSecurity::AllowInsecureHttp
+            } else {
+                TransportSecurity::RequireTls
+            },
+            database: env.text("CLICKHOUSE_DATABASE", "default"),
+            user: env.text("CLICKHOUSE_USER", "default"),
+            password: env.text("CLICKHOUSE_PASSWORD", ""),
+            max_execution: env.deadline("CLICKHOUSE_MAX_EXECUTION_MS", Duration::from_secs(10))?,
+        })
+    }
 }
 
 /// The client every caller in this workspace should use.
@@ -233,5 +255,66 @@ mod tests {
         .expect("an invalid URL must be refused");
 
         assert!(matches!(error, Error::BadUrl { .. }));
+    }
+
+    fn read(pairs: &[(&str, &str)]) -> Result<Config, Invalid> {
+        Config::read(&pairs.iter().copied().collect())
+    }
+
+    #[test]
+    fn an_empty_environment_is_the_local_server_and_requires_tls() {
+        let config = read(&[]).expect("defaults stand alone");
+
+        assert_eq!(config.url, "http://localhost:8123");
+        assert_eq!(config.transport_security, TransportSecurity::RequireTls);
+        assert_eq!(
+            [config.database, config.user, config.password],
+            ["default", "default", ""]
+        );
+        assert_eq!(config.max_execution, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn reads_every_variable_in_the_group() {
+        let config = read(&[
+            ("CLICKHOUSE_URL", "https://clickhouse:8443"),
+            ("CLICKHOUSE_ALLOW_INSECURE_HTTP", "true"),
+            ("CLICKHOUSE_DATABASE", "aave"),
+            ("CLICKHOUSE_USER", "indexer"),
+            ("CLICKHOUSE_PASSWORD", "hunter2"),
+            ("CLICKHOUSE_MAX_EXECUTION_MS", "2500"),
+        ])
+        .expect("every value is valid");
+
+        assert_eq!(config.url, "https://clickhouse:8443");
+        assert_eq!(
+            config.transport_security,
+            TransportSecurity::AllowInsecureHttp
+        );
+        assert_eq!(
+            [config.database, config.user, config.password],
+            ["aave", "indexer", "hunter2"]
+        );
+        assert_eq!(config.max_execution, Duration::from_millis(2_500));
+    }
+
+    #[test]
+    fn an_empty_password_is_a_password_and_not_an_absence() {
+        // CLICKHOUSE_SKIP_USER_SETUP leaves none; a fallback here would send one.
+        let config = read(&[("CLICKHOUSE_PASSWORD", "")]).expect("empty is legitimate");
+
+        assert_eq!(config.password, "");
+    }
+
+    #[test]
+    fn refuses_a_url_that_is_not_one_rather_than_booting_degraded() {
+        let refusal = read(&[("CLICKHOUSE_URL", "http//localhost:8123")])
+            .expect_err("expected a refusal")
+            .to_string();
+
+        assert!(
+            refusal.contains("CLICKHOUSE_URL: must be a URL"),
+            "{refusal}"
+        );
     }
 }

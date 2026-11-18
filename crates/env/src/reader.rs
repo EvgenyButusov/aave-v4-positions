@@ -7,8 +7,10 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
+use std::str::FromStr;
 use std::time::Duration;
 
+use alloy_primitives::Address;
 use tracing::level_filters::LevelFilter;
 
 /// Owns its map, so a case is `[(key, value)].into_iter().collect()` and touches no global state.
@@ -104,6 +106,23 @@ impl Env {
         }
     }
 
+    /// [`Env::required`], parsed: the type's own refusal is what the message says was wanted.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`] when the variable is absent, empty, or not a `T`.
+    pub fn required_as<T>(&self, key: &str) -> Result<T, Invalid>
+    where
+        T: FromStr,
+        T::Err: fmt::Display,
+    {
+        let value = self.required(key)?;
+
+        value
+            .parse()
+            .map_err(|refusal| Invalid::new(key, &format!("{refusal}, got {value:?}")))
+    }
+
     /// As lenient as WHATWG: `clickhouse:8123` parses and is accepted.
     ///
     /// # Errors
@@ -116,6 +135,57 @@ impl Env {
             return Err(Invalid::new(key, &format!("must be a URL, got {value:?}")));
         }
         Ok(value)
+    }
+
+    /// Comma-separated, in the order given, with at least one. Required.
+    ///
+    /// A provider's URL carries its API key, so a refusal names the entry's position and never
+    /// its text.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`] when nothing is listed or an entry is not a URL.
+    pub fn urls(&self, key: &str) -> Result<Vec<String>, Invalid> {
+        let urls: Vec<String> = self
+            .raw(key)
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_owned)
+            .collect();
+
+        if urls.is_empty() {
+            return Err(Invalid::new(key, "must list at least one URL"));
+        }
+        if let Some(index) = urls.iter().position(|url| url::Url::parse(url).is_err()) {
+            let entry = index + 1;
+            return Err(Invalid::new(key, &format!("entry {entry} is not a URL")));
+        }
+        Ok(urls)
+    }
+
+    /// `0x` and forty hex digits, in either case. The checksum is not verified.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`] for anything else.
+    pub fn address_20(&self, key: &str, default: Address) -> Result<Address, Invalid> {
+        let Some(value) = self.raw(key) else {
+            return Ok(default);
+        };
+
+        value
+            .strip_prefix("0x")
+            // `Address` takes a `0x` of its own, so `0x0x…` would parse.
+            .filter(|digits| digits.len() == 40)
+            .and_then(|digits| digits.parse().ok())
+            .ok_or_else(|| {
+                Invalid::new(
+                    key,
+                    &format!("must be a 20-byte hex address, got {value:?}"),
+                )
+            })
     }
 
     /// # Errors
@@ -134,34 +204,14 @@ impl Env {
     ///
     /// [`Invalid`] outside `1..=65535`. 0 is "any port".
     pub fn port(&self, key: &str, default: u16) -> Result<u16, Invalid> {
-        let Some(value) = self.raw(key) else {
-            return Ok(default);
-        };
-
-        match value.parse::<u16>() {
-            Ok(port) if port > 0 => Ok(port),
-            _ => Err(Invalid::new(
-                key,
-                &format!("must be 1..=65535, got {value:?}"),
-            )),
-        }
+        self.within(key, default, 1, u16::MAX, "")
     }
 
     /// # Errors
     ///
     /// [`Invalid`] outside `0..=max`.
     pub fn seconds(&self, key: &str, default: u64, max: u64) -> Result<u64, Invalid> {
-        let Some(value) = self.raw(key) else {
-            return Ok(default);
-        };
-
-        match value.parse::<u64>() {
-            Ok(seconds) if seconds <= max => Ok(seconds),
-            _ => Err(Invalid::new(
-                key,
-                &format!("must be 0..={max}, got {value:?}"),
-            )),
-        }
+        self.within(key, default, 0, max, "")
     }
 
     /// How many of something this process holds. Parses straight to `usize`,
@@ -177,17 +227,16 @@ impl Env {
         min: usize,
         max: usize,
     ) -> Result<usize, Invalid> {
-        let Some(value) = self.raw(key) else {
-            return Ok(default);
-        };
+        self.within(key, default, min, max, "")
+    }
 
-        match value.parse::<usize>() {
-            Ok(size) if (min..=max).contains(&size) => Ok(size),
-            _ => Err(Invalid::new(
-                key,
-                &format!("must be {min}..={max}, got {value:?}"),
-            )),
-        }
+    /// A block height or a number of blocks.
+    ///
+    /// # Errors
+    ///
+    /// [`Invalid`] outside `min..=max`.
+    pub fn count(&self, key: &str, default: u64, min: u64, max: u64) -> Result<u64, Invalid> {
+        self.within(key, default, min, max, "")
     }
 
     /// A deadline. Takes a minimum, which [`Env::seconds`] does not, because a
@@ -197,17 +246,8 @@ impl Env {
     ///
     /// [`Invalid`] outside `min..=max`.
     pub fn millis(&self, key: &str, default: u64, min: u64, max: u64) -> Result<Duration, Invalid> {
-        let Some(value) = self.raw(key) else {
-            return Ok(Duration::from_millis(default));
-        };
-
-        match value.parse::<u64>() {
-            Ok(millis) if (min..=max).contains(&millis) => Ok(Duration::from_millis(millis)),
-            _ => Err(Invalid::new(
-                key,
-                &format!("must be {min}..={max} milliseconds, got {value:?}"),
-            )),
-        }
+        self.within(key, default, min, max, " milliseconds")
+            .map(Duration::from_millis)
     }
 
     /// [`Env::millis`] under the one ceiling every deadline in this workspace shares.
@@ -281,6 +321,23 @@ impl Env {
         };
 
         self.one_of(key, value, table)
+    }
+
+    fn within<T>(&self, key: &str, default: T, min: T, max: T, unit: &str) -> Result<T, Invalid>
+    where
+        T: FromStr + PartialOrd + fmt::Display + Copy,
+    {
+        let Some(value) = self.raw(key) else {
+            return Ok(default);
+        };
+
+        match value.parse::<T>() {
+            Ok(parsed) if (min..=max).contains(&parsed) => Ok(parsed),
+            _ => Err(Invalid::new(
+                key,
+                &format!("must be {min}..={max}{unit}, got {value:?}"),
+            )),
+        }
     }
 
     fn raw(&self, key: &str) -> Option<&str> {
@@ -423,6 +480,116 @@ mod tests {
         assert_eq!(read("600000").unwrap(), Duration::from_secs(600));
         assert!(read("0").is_err());
         assert!(read("600001").is_err());
+    }
+
+    #[test]
+    fn counts_from_the_floor_to_the_ceiling() {
+        let count = |raw: &str| read(&[("DEPTH", raw)], |env| env.count("DEPTH", 128, 0, 10_000));
+
+        assert_eq!(count("0").unwrap(), 0);
+        assert_eq!(count("10000").unwrap(), 10_000);
+        assert!(
+            count("10001")
+                .unwrap_err()
+                .to_string()
+                .ends_with(r#"DEPTH: must be 0..=10000, got "10001""#)
+        );
+        assert!(count("-1").is_err());
+        assert_eq!(
+            read(&[], |env| env.count("DEPTH", 128, 0, 10_000)).unwrap(),
+            128
+        );
+    }
+
+    #[test]
+    fn reads_a_required_value_as_its_type_and_says_what_the_type_wanted() {
+        assert_eq!(
+            read(&[("ID", "7")], |env| env.required_as::<u8>("ID")).unwrap(),
+            7
+        );
+        assert!(refusal(&[], |env| env.required_as::<u8>("ID")).ends_with("ID: must be set"));
+        assert!(
+            refusal(&[("ID", "300")], |env| env.required_as::<u8>("ID"))
+                .ends_with(r#"ID: number too large to fit in target type, got "300""#)
+        );
+    }
+
+    #[test]
+    fn lists_urls_in_order_trimmed_and_without_the_empty_ones() {
+        let urls = read(
+            &[("URLS", " https://a.example , ,https://b.example,")],
+            |env| env.urls("URLS"),
+        )
+        .unwrap();
+
+        assert_eq!(urls, ["https://a.example", "https://b.example"]);
+    }
+
+    #[test]
+    fn refuses_a_list_with_nothing_in_it() {
+        for pairs in [vec![], vec![("URLS", " , ")]] {
+            assert!(
+                refusal(&pairs, |env| env.urls("URLS"))
+                    .ends_with("URLS: must list at least one URL")
+            );
+        }
+    }
+
+    #[test]
+    fn names_the_entry_that_is_not_a_url_without_quoting_the_list() {
+        let refusal = refusal(
+            &[(
+                "URLS",
+                "https://eth.example/v2/key-for-the-provider,eth.example/v2",
+            )],
+            |env| env.urls("URLS"),
+        );
+
+        assert!(refusal.ends_with("URLS: entry 2 is not a URL"), "{refusal}");
+        assert!(
+            !refusal.contains("key-for"),
+            "a provider key reached the message"
+        );
+    }
+
+    #[test]
+    fn reads_a_contract_address_in_either_case() {
+        let lower = "0x94e7a5dcbe816e498b89ab752661904e2f56c485";
+        let address = |raw: &str| {
+            read(&[("SPOKE", raw)], |env| {
+                env.address_20("SPOKE", Address::ZERO)
+            })
+        };
+
+        assert_eq!(
+            address(lower).unwrap(),
+            address(&lower.to_uppercase().replacen("0X", "0x", 1)).unwrap()
+        );
+        assert_eq!(format!("{:#x}", address(lower).unwrap()), lower);
+        assert_eq!(
+            read(&[], |env| env.address_20("SPOKE", Address::ZERO)).unwrap(),
+            Address::ZERO
+        );
+    }
+
+    #[test]
+    fn refuses_an_address_that_is_not_twenty_bytes_of_hex_after_0x() {
+        let digits = "94e7a5dcbe816e498b89ab752661904e2f56c485";
+
+        for bad in [
+            digits.to_owned(),
+            format!("0x{}", &digits[2..]),
+            format!("0x{digits}00"),
+            format!("0x0x{digits}"),
+            format!("0x{}zz", &digits[2..]),
+        ] {
+            assert!(
+                refusal(&[("SPOKE", &bad)], |env| env
+                    .address_20("SPOKE", Address::ZERO))
+                .contains("SPOKE: must be a 20-byte hex address"),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

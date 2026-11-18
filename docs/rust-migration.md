@@ -1085,6 +1085,21 @@ and each of these would show up in it as a difference to explain away:
 Each carries a one-line comment naming it as ported-as-is. They are fixed after cutover, against a
 codebase already proven identical to the one it replaced.
 
+**Landed.** [#64](https://github.com/EugeneButusov/aave-v4-positions/pull/64) the ports and the two
+Postgres stores, [#65](https://github.com/EugeneButusov/aave-v4-positions/pull/65) the detector,
+[#66](https://github.com/EugeneButusov/aave-v4-positions/pull/66) the loop, then `bins/indexer`. The
+binary parses the set the TypeScript validates, minus the oracle, enrichment and price variables,
+which arrive with their consumers in Phase 4. It serves `/health/live` and `/health/ready`, whose
+three rows are `indexer`, `clickhouse` and `postgres` in that order. It does not construct the loop:
+with no chain client to give it, the status stays `starting` and the stall check answers `up`, which
+is what a TypeScript pod with `INDEXER_AUTOSTART=false` reports. Every chain variable is validated
+at boot and logged once, the providers by count, so 3b wires values that have already been refused
+when wrong. One bound is new: `INDEXER_STALL_THRESHOLD_MS` gains a one-day ceiling, where the
+TypeScript had none.
+
+What 3b still owes 3a is the part nothing here can prove: that the loop's ordering survives a real
+provider's error taxonomy, and the differential gate below.
+
 #### Phase 3b — the chain, and Aave ingestion
 
 The alloy adapters and provider health — **outside `crates/indexing`**, see the note under

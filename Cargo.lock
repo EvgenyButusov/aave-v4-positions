@@ -1151,6 +1151,7 @@ dependencies = [
 name = "env"
 version = "0.0.0"
 dependencies = [
+ "alloy-primitives",
  "dotenvy",
  "tracing",
  "url",
@@ -1762,6 +1763,25 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "indexer"
+version = "0.0.0"
+dependencies = [
+ "alloy-primitives",
+ "axum",
+ "clickhouse-client",
+ "env",
+ "indexing",
+ "ops",
+ "postgres",
+ "telemetry",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "units",
 ]
 
 [[package]]

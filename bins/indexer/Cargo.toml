@@ -1,0 +1,36 @@
+[package]
+name = "indexer"
+description = "Follows the chain into the two databases. Serves its probes and nothing else"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+clickhouse-client.workspace = true
+env.workspace = true
+indexing.workspace = true
+ops.workspace = true
+postgres.workspace = true
+telemetry.workspace = true
+units.workspace = true
+
+# `Address` for the two contracts followed, and `address!` for their defaults.
+alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
+# `serve`, for the router `ops` builds. No route of this binary's own.
+axum = "0.8.9"
+# `macros` for `#[tokio::main]` and `join!`, `net` for the listener, and
+# `rt-multi-thread` because the loop will share this runtime with the probes.
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+# `start_paused`, so a stall is reached by advancing the clock rather than waiting it out;
+# `io-util` and `sync` for the socket case.
+tokio = { version = "1.53.1", features = ["io-util", "sync", "test-util"] }
+# `oneshot`, so a readiness case drives the router without a port.
+tower = { version = "0.5.3", features = ["util"] }
+# The formatted log a stall case reads back.
+tracing-subscriber = "0.3.23"
+
+[lints]
+workspace = true

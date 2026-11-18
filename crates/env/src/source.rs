@@ -7,7 +7,7 @@
 //! binary does both.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::Env;
 
@@ -18,8 +18,9 @@ pub enum Source {
     /// The process environment alone, which is what a deployment injects. A
     /// `.env` sitting on disk is not consulted.
     Process,
-    /// The process environment, with `.env` files filling in what it leaves out
-    /// and never replacing it — so a file is a default, not an override.
+    /// The process environment, with the binary's `.env` filling in what it
+    /// leaves out and never replacing it — so the file is a default, not an
+    /// override.
     ProcessAndFile,
 }
 
@@ -37,9 +38,8 @@ impl Source {
 
     /// Every variable this process can see, by whichever route it allows.
     ///
-    /// `crate_dir` is the binary's `CARGO_MANIFEST_DIR`. Its own `.env` is read
-    /// before the nearest one above it, so a variable only that binary reads
-    /// needs no prefix to keep it apart from another binary's.
+    /// `crate_dir` is the binary's `CARGO_MANIFEST_DIR`, and the file is the
+    /// `.env` in it: found from the build rather than the working directory.
     #[must_use]
     pub fn read(self, crate_dir: &str) -> Env {
         let process = std::env::vars().collect();
@@ -65,25 +65,12 @@ impl Source {
 }
 
 fn fill(vars: HashMap<String, String>, crate_dir: &Path) -> HashMap<String, String> {
-    files(crate_dir).fold(vars, |vars, file| {
-        // The usual error is that there is no file. A malformed one is silent
-        // too, which is a local problem with a local symptom.
-        match dotenvy::from_path_iter(file) {
-            Ok(pairs) => merge(vars, pairs.flatten()),
-            Err(_) => vars,
-        }
-    })
-}
-
-/// The binary's own file, then the shared one: the nearest `.env` above it.
-fn files(crate_dir: &Path) -> impl Iterator<Item = PathBuf> {
-    let shared = crate_dir
-        .ancestors()
-        .skip(1)
-        .map(|dir| dir.join(".env"))
-        .find(|file| file.is_file());
-
-    std::iter::once(crate_dir.join(".env")).chain(shared)
+    // The usual error is that there is no file. A malformed one is silent too,
+    // which is a local problem with a local symptom.
+    match dotenvy::from_path_iter(crate_dir.join(".env")) {
+        Ok(pairs) => merge(vars, pairs.flatten()),
+        Err(_) => vars,
+    }
 }
 
 /// The file fills gaps and nothing else.
@@ -132,32 +119,27 @@ mod tests {
         assert_eq!(merged["LOG_LEVEL"], "debug", "the gap was not filled");
     }
 
-    /// A workspace in the temporary directory: a shared `.env` at its root, and
-    /// one of the binary's own when `own` is given.
-    fn workspace(name: &str, shared: &str, own: Option<&str>) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("env-{}-{name}", std::process::id()));
-        let crate_dir = root.join("bins").join("bin");
+    /// A workspace in the temporary directory, with a `.env` at its root and
+    /// `own` beside the binary's manifest.
+    fn workspace(name: &str, root: &str, own: &str) -> std::path::PathBuf {
+        let workspace = std::env::temp_dir().join(format!("env-{}-{name}", std::process::id()));
+        let crate_dir = workspace.join("bins").join("bin");
         std::fs::create_dir_all(&crate_dir).unwrap();
-        std::fs::write(root.join(".env"), shared).unwrap();
-        if let Some(own) = own {
-            std::fs::write(crate_dir.join(".env"), own).unwrap();
-        }
+        std::fs::write(workspace.join(".env"), root).unwrap();
+        std::fs::write(crate_dir.join(".env"), own).unwrap();
         crate_dir
     }
 
     #[test]
-    fn the_binarys_own_file_beats_the_shared_one() {
-        let crate_dir = workspace("own", "PORT=9\nLOG_LEVEL=debug\n", Some("PORT=3101\n"));
+    fn reads_the_file_beside_the_binarys_manifest() {
+        let crate_dir = workspace("own", "", "PORT=3101\n");
 
-        let filled = fill(HashMap::new(), &crate_dir);
-
-        assert_eq!(filled["PORT"], "3101");
-        assert_eq!(filled["LOG_LEVEL"], "debug", "the shared file was not read");
+        assert_eq!(fill(HashMap::new(), &crate_dir)["PORT"], "3101");
     }
 
     #[test]
-    fn a_deployments_variables_beat_both_files() {
-        let crate_dir = workspace("process", "PORT=9\n", Some("PORT=3101\n"));
+    fn a_deployments_variables_beat_the_binarys_file() {
+        let crate_dir = workspace("process", "", "PORT=3101\n");
 
         let filled = fill(pairs(&[("PORT", "3000")]), &crate_dir);
 
@@ -165,10 +147,10 @@ mod tests {
     }
 
     #[test]
-    fn a_binary_with_no_file_of_its_own_reads_the_shared_one() {
-        let crate_dir = workspace("shared", "LOG_LEVEL=debug\n", None);
+    fn a_file_above_the_binary_is_not_read() {
+        let crate_dir = workspace("above", "RPC_URLS=https://stale.example\n", "PORT=3101\n");
 
-        assert_eq!(fill(HashMap::new(), &crate_dir)["LOG_LEVEL"], "debug");
+        assert!(!fill(HashMap::new(), &crate_dir).contains_key("RPC_URLS"));
     }
 
     #[test]

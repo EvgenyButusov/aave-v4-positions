@@ -149,9 +149,9 @@ Tear down with `docker compose down`, or `down -v` to drop the indexed data and 
 to a third party. Point it at your own node with `RPC_URLS=https://your-node docker compose up -d`,
 or set `INDEXER_AUTOSTART=false` for probes only. Ports, chain, start block and everything else are
 environment variables — the full table is in
-[Configuration](docs/design-notes.md#configuration), and both `.env.example` files are annotated:
-[`.env.example`](.env.example) for what the Rust binaries share, one beside each Rust binary for
-its own, and `apps/indexer/.env.example` for the indexer.
+[Configuration](docs/design-notes.md#configuration), and each binary's `.env.example` is annotated:
+[`bins/api`](bins/api/.env.example), [`bins/indexer`](bins/indexer/.env.example),
+[`bins/migrate`](bins/migrate/.env.example), and `apps/indexer` for the Node indexer.
 
 ### Backfilling a range
 
@@ -175,7 +175,7 @@ Outside Docker it is `pnpm backfill --from … --to …`.
 
 ```bash
 pnpm install
-cp .env.example .env && cp bins/api/.env.example bins/api/.env && cp apps/indexer/.env.example apps/indexer/.env
+for dir in bins/api bins/indexer bins/migrate apps/indexer; do cp $dir/.env.example $dir/.env; done
 cargo run --release -p migrate                     # schema is its own step, never done at boot
 pnpm dev:indexer                                   # and, in another shell
 cargo run --release -p api

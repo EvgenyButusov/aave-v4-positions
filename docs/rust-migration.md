@@ -454,10 +454,10 @@ overrides what it needs differently — `migrate` keeps its ten-minute execution
 written a third time in `bins/indexer`; one reader means a variable cannot be renamed in two of
 three places.
 
-**A binary's own variables carry no prefix of its name.** Each reads a `.env` beside its
-`Cargo.toml` before the shared one at the root, found from `CARGO_MANIFEST_DIR` rather than the
-working directory, so `bins/api` reads `PORT` and `bins/indexer` reads `PORT` without colliding in
-one file. A deployment injects each process's environment separately and reads no file at all. The
+**A binary's variables carry no prefix of its name.** Each reads only the `.env` beside its
+`Cargo.toml`, found from `CARGO_MANIFEST_DIR` rather than the working directory, so `bins/api` and
+`bins/indexer` both read `PORT` without colliding. The shared groups are repeated in each file rather
+than layered from a root one, so a file is the whole of what its binary reads. A deployment injects each process's environment separately and reads no file at all. The
 Rust indexer's names therefore stop matching the Node indexer's `INDEXER_*`; its deployment's
 variables are renamed at its cutover, not before.
 

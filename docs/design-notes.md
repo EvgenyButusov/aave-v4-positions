@@ -204,12 +204,13 @@ pnpm install
 That also installs the git hooks (via the `prepare` script). Then give each service an environment:
 
 ```bash
-cp .env.example .env && cp bins/api/.env.example bins/api/.env && cp apps/indexer/.env.example apps/indexer/.env
+for dir in bins/api bins/indexer bins/migrate apps/indexer; do cp $dir/.env.example $dir/.env; done
 ```
 
-The root file is what the Rust binaries share, and each Rust binary reads its own beside its
-`Cargo.toml` first — found from where it was built, so a `cargo run` works from anywhere in the tree,
-and a variable only one binary reads needs no prefix. `apps/indexer/` holds the Node indexer's. Both are annotated line by line; [Configuration](#configuration)
+One file per binary, beside its `Cargo.toml`, holding every variable that binary reads and nothing
+else. A Rust binary finds its file from where it was built, so a `cargo run` works from anywhere in
+the tree, and no variable needs the binary's name as a prefix. `apps/indexer/` holds the Node
+indexer's. Both are annotated line by line; [Configuration](#configuration)
 is the same list as prose.
 
 The indexer needs a ClickHouse to write to (see [Prerequisites](#prerequisites)) with the schema
@@ -449,7 +450,7 @@ indexer reads the same set without the `INDEXER_` prefix:
 | `CHAIN_ID`                     | _required_ | Checked against what the providers report, on the first iteration.                                                   |
 | `RPC_URLS`                     | _required_ | Comma-separated, tried in order.                                                                                     |
 | `FINALITY_DEPTH`               | `128`      | The reorg detector's, never the loop's: it sets both the settled boundary and how many headers are retained.         |
-| `INDEXER_START_BLOCK`          | `24720891` | Core Hub genesis, the earlier of the two contracts — but **compose and both `.env.example` files set `24720899`**, the Main Spoke's, so that is what anything you actually run starts from. Read on a cold start and never again; see [Resuming](#resuming). |
+| `INDEXER_START_BLOCK`          | `24720891` | Core Hub genesis, the earlier of the two contracts — but **compose and `apps/indexer/.env.example` set `24720899`**, the Main Spoke's, so that is what anything you actually run starts from. Read on a cold start and never again; see [Resuming](#resuming). |
 | `INDEXER_MAX_RANGE_SIZE`       | `1000`     | Blocks per dispatch while catching up.                                                                               |
 | `INDEXER_POLL_INTERVAL_MS`     | `4000`     |                                                                                                                      |
 | `INDEXER_RPC_TIMEOUT_MS`       | `10000`    |                                                                                                                      |
@@ -487,9 +488,8 @@ table the API reads rather than reaching for a node while answering. Provider ca
 vary, though: measured `eth_getLogs` ranges across public endpoints run from 50 blocks to 10,000, and
 some serve no history at all, which is why the provider list is ordered and the range size adapts.
 
-Each reader's `.env.example` is the annotated list: [`.env.example`](../.env.example) for what the
-Rust binaries share, [`bins/api/.env.example`](../bins/api/.env.example) and
-[`bins/indexer/.env.example`](../bins/indexer/.env.example) for each one's own, and
+Each reader's `.env.example` is the annotated list: [`bins/api`](../bins/api/.env.example),
+[`bins/indexer`](../bins/indexer/.env.example), [`bins/migrate`](../bins/migrate/.env.example), and
 `apps/indexer/.env.example` for the Node indexer.
 
 ## API documentation

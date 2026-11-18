@@ -6,7 +6,7 @@ use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::engine::Indexer;
-use crate::engine::harness::{START, failed, interesting, plain, retry};
+use crate::engine::harness::{START, failed, plain, retry};
 use crate::fixtures::hash_of;
 use crate::reorg::Verdict;
 
@@ -14,7 +14,7 @@ use crate::reorg::Verdict;
 /// than `with_default` around it, because this is already inside a runtime
 /// and building a second one inside a sync scope would panic.
 async fn traced(indexer: &mut Indexer) -> Vec<SpanData> {
-    interesting();
+    test_tracing::interesting();
 
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()

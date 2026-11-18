@@ -104,7 +104,6 @@ mod tests {
 
     use tracing::instrument::WithSubscriber as _;
     use tracing_subscriber::fmt::format::FmtSpan;
-    use tracing_subscriber::layer::SubscriberExt as _;
 
     use super::*;
     use crate::build_pool;
@@ -162,22 +161,9 @@ mod tests {
         }
     }
 
-    /// `tracing` caches callsite interest from the *global* subscriber, which is
-    /// `NoSubscriber` here and answers "never". Without this, whether a scoped
-    /// subscriber sees a span depends on which case ran first.
-    fn interesting() {
-        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-        ONCE.get_or_init(|| {
-            let _ = tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
-            );
-        });
-    }
-
     /// A pool and somewhere to read its spans back from, which both cases want.
     fn watched() -> (TracedPool, Lines, impl tracing::Subscriber) {
-        interesting();
+        test_tracing::interesting();
 
         let url = std::env::var("POSTGRES_URL").unwrap_or_else(|_| {
             "postgres://postgres@localhost:5432/postgres?sslmode=disable".to_owned()

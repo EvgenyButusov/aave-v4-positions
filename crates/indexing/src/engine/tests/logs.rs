@@ -7,7 +7,7 @@ use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::engine::Indexer;
-use crate::engine::harness::{failed, interesting, plain};
+use crate::engine::harness::{failed, plain};
 use crate::fixtures::hash_of;
 use crate::reorg::Verdict;
 
@@ -30,7 +30,7 @@ impl Write for Captured {
 }
 
 async fn logged(indexer: &mut Indexer) -> Vec<String> {
-    interesting();
+    test_tracing::interesting();
 
     let captured = Captured::default();
     let writer = captured.clone();

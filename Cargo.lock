@@ -103,6 +103,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "telemetry",
+ "test-tracing",
  "thiserror",
  "time",
  "token-metadata",
@@ -702,6 +703,7 @@ dependencies = [
  "clickhouse",
  "env",
  "hyper-util",
+ "test-tracing",
  "thiserror",
  "tokio",
  "tracing",
@@ -1777,6 +1779,7 @@ dependencies = [
  "ops",
  "postgres",
  "telemetry",
+ "test-tracing",
  "tokio",
  "tower",
  "tracing",
@@ -1794,6 +1797,7 @@ dependencies = [
  "opentelemetry_sdk",
  "postgres",
  "test-db",
+ "test-tracing",
  "thiserror",
  "time",
  "tokio",
@@ -2490,6 +2494,7 @@ dependencies = [
  "env",
  "rustls",
  "rustls-native-certs",
+ "test-tracing",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -3489,6 +3494,14 @@ version = "0.0.0"
 dependencies = [
  "migrations",
  "postgres",
+]
+
+[[package]]
+name = "test-tracing"
+version = "0.0.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

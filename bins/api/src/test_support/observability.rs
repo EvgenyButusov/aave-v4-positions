@@ -22,23 +22,8 @@ pub(crate) struct Observed {
     pub(crate) logged: String,
 }
 
-/// Makes every callsite in this binary interesting, once.
-///
-/// `tracing` caches callsite interest from the global subscriber, which is
-/// `NoSubscriber` here and answers "never" — so without this a case reads an
-/// empty log and a correct response.
-pub(crate) fn interesting() {
-    static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-    ONCE.get_or_init(|| {
-        let _ = tracing::subscriber::set_global_default(
-            tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
-        );
-    });
-}
-
 pub(crate) fn observed(router: Router, request: Request<Body>) -> Observed {
-    interesting();
+    test_tracing::interesting();
 
     // A global by design, and every case sets the same one.
     opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());

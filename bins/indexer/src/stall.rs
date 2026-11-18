@@ -94,7 +94,6 @@ mod tests {
     use std::sync::Mutex;
 
     use tracing::instrument::WithSubscriber as _;
-    use tracing_subscriber::layer::SubscriberExt as _;
 
     use super::*;
 
@@ -181,21 +180,9 @@ mod tests {
         }
     }
 
-    /// `tracing` caches callsite interest from the global subscriber, `NoSubscriber` here, so
-    /// without one that wants everything a scoped capture sees a line only if it ran first.
-    fn interesting() {
-        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-        ONCE.get_or_init(|| {
-            let _ = tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
-            );
-        });
-    }
-
     #[tokio::test(start_paused = true)]
     async fn logs_a_stall_once_when_it_starts_and_once_when_it_ends() {
-        interesting();
+        test_tracing::interesting();
         let (status, stall) = stall();
         let captured = Captured::default();
         let writer = captured.clone();

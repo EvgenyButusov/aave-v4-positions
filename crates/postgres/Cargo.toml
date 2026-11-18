@@ -43,6 +43,7 @@ rustls-native-certs = "0.8.5"
 tracing = "0.1.44"
 
 [dev-dependencies]
+test-tracing.workspace = true
 # Only the cases need a runtime; the crate itself starts none. `net`, `io-util`
 # and `sync` are the stub server one case dials: a listener that answers the
 # `SSLRequest` and reports back what the client sent next.

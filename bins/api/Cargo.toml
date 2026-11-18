@@ -75,6 +75,7 @@ utoipa = { version = "5.5.0", features = ["preserve_order", "time", "yaml"] }
 utoipa-axum = "0.2.0"
 
 [dev-dependencies]
+test-tracing.workspace = true
 # The four in-memory test stores implement the ports' `#[async_trait]` traits. The
 # binary implements none of them, so this is a dependency of the cases only.
 async-trait = "0.1.92"

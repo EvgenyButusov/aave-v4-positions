@@ -24,6 +24,7 @@ tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = "0.1.44"
 
 [dev-dependencies]
+test-tracing.workspace = true
 # `start_paused`, so a stall is reached by advancing the clock rather than waiting it out;
 # `io-util` and `sync` for the socket case.
 tokio = { version = "1.53.1", features = ["io-util", "sync", "test-util"] }

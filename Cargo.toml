@@ -21,6 +21,8 @@ prices = { path = "crates/prices" }
 telemetry = { path = "crates/telemetry" }
 # A dev-dependency everywhere it appears; see its crate doc.
 test-db = { path = "crates/test-db" }
+# A dev-dependency everywhere it appears; see its crate doc.
+test-tracing = { path = "crates/test-tracing" }
 token-metadata = { path = "crates/token-metadata" }
 units = { path = "crates/units" }
 

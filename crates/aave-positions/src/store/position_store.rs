@@ -30,7 +30,7 @@ pub struct PositionKey {
 /// `spoke` narrows the listing, never the arithmetic. A Spoke is an isolated
 /// margin account (§12.3), so summing across two hides an imminent liquidation
 /// behind unrelated collateral; anything that aggregates must do it per Spoke.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PositionQuery {
     pub chain_id: ChainId,
     pub user: Address,

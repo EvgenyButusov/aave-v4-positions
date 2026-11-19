@@ -12,6 +12,13 @@ use std::time::Duration;
 
 use alloy_primitives::Address;
 use tracing::level_filters::LevelFilter;
+use url::Url;
+
+// No `Debug`: a provider's URL carries its key.
+pub struct Urls {
+    pub first: Url,
+    pub rest: Vec<Url>,
+}
 
 /// Owns its map, so a case is `[(key, value)].into_iter().collect()` and touches no global state.
 pub struct Env {
@@ -145,24 +152,29 @@ impl Env {
     /// # Errors
     ///
     /// [`Invalid`] when nothing is listed or an entry is not a URL.
-    pub fn urls(&self, key: &str) -> Result<Vec<String>, Invalid> {
-        let urls: Vec<String> = self
+    pub fn urls(&self, key: &str) -> Result<Urls, Invalid> {
+        let mut urls = self
             .raw(key)
             .unwrap_or_default()
             .split(',')
             .map(str::trim)
             .filter(|url| !url.is_empty())
-            .map(str::to_owned)
-            .collect();
+            .enumerate()
+            .map(|(index, url)| {
+                let entry = index + 1;
+                Url::parse(url)
+                    .map_err(|_| Invalid::new(key, &format!("entry {entry} is not a URL")))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter();
 
-        if urls.is_empty() {
-            return Err(Invalid::new(key, "must list at least one URL"));
-        }
-        if let Some(index) = urls.iter().position(|url| url::Url::parse(url).is_err()) {
-            let entry = index + 1;
-            return Err(Invalid::new(key, &format!("entry {entry} is not a URL")));
-        }
-        Ok(urls)
+        let first = urls
+            .next()
+            .ok_or_else(|| Invalid::new(key, "must list at least one URL"))?;
+        Ok(Urls {
+            first,
+            rest: urls.collect(),
+        })
     }
 
     /// `0x` and forty hex digits, in either case. The checksum is not verified.
@@ -372,12 +384,13 @@ mod tests {
         read(&pairs.iter().copied().collect())
     }
 
-    fn refusal<T: fmt::Debug>(
+    fn refusal<T>(
         pairs: &[(&str, &str)],
         reader: impl FnOnce(&Env) -> Result<T, Invalid>,
     ) -> String {
         read(pairs, reader)
-            .expect_err("expected a refusal")
+            .err()
+            .expect("expected a refusal")
             .to_string()
     }
 
@@ -522,7 +535,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(urls, ["https://a.example", "https://b.example"]);
+        let listed: Vec<&str> = std::iter::once(&urls.first)
+            .chain(&urls.rest)
+            .map(Url::as_str)
+            .collect();
+        assert_eq!(listed, ["https://a.example/", "https://b.example/"]);
     }
 
     #[test]

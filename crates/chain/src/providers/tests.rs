@@ -106,11 +106,11 @@ async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
 
     let (_exporter, meters) = meters();
     let providers = Providers::new(
-        &[primary.url, secondary.url],
+        &url::Url::parse(&primary.url).unwrap(),
+        &[url::Url::parse(&secondary.url).unwrap()],
         &crate::http::client(Duration::from_secs(5)).unwrap(),
         &meters.meter("test"),
-    )
-    .unwrap();
+    );
     let answer = RpcClient::new(providers, false)
         .request::<_, Value>("eth_call", ())
         .await;

@@ -272,7 +272,14 @@ mod tests {
         assert_eq!(config.chain.max_range_size, 50);
         assert_eq!(config.chain.poll_interval, Duration::from_millis(100));
         assert_eq!(config.finality_depth, 0);
-        assert_eq!(config.rpc.urls, ["https://a.example", "https://b.example"]);
+        assert_eq!(config.rpc.preferred.as_str(), "https://a.example/");
+        let fallbacks: Vec<&str> = config
+            .rpc
+            .fallbacks
+            .iter()
+            .map(|url| url.as_str())
+            .collect();
+        assert_eq!(fallbacks, ["https://b.example/"]);
         assert_eq!(config.rpc.timeout, Duration::from_secs(120));
         assert_eq!(config.stall_threshold, Duration::from_secs(1));
         assert!(!config.autostart);

@@ -8,6 +8,7 @@ mod health;
 #[cfg(test)]
 mod tests;
 
+use std::iter;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -19,8 +20,6 @@ use opentelemetry::metrics::Meter;
 use tower::{Service, ServiceExt as _};
 use tracing::Instrument as _;
 use url::Url;
-
-use crate::error::Error;
 
 use health::{Answer, Health};
 
@@ -35,27 +34,19 @@ struct Members {
 
 impl Providers {
     pub(crate) fn new(
-        urls: &[String],
+        preferred: &Url,
+        fallbacks: &[Url],
         client: &reqwest::Client,
         meter: &Meter,
-    ) -> Result<Self, Error> {
-        let parsed = urls
-            .iter()
-            .enumerate()
-            .map(|(index, url)| Url::parse(url).map_err(|_| Error::NotAUrl { entry: index + 1 }))
-            .collect::<Result<Vec<_>, _>>()?;
+    ) -> Self {
+        let http = |url: &Url| Http::with_client(client.clone(), url.clone());
+        let labels = iter::once(preferred).chain(fallbacks).map(label).collect();
 
-        let health = Health::new(meter, parsed.iter().map(label).collect());
-        let mut members = parsed
-            .into_iter()
-            .map(|url| Http::with_client(client.clone(), url));
-        let preferred = members.next().ok_or(Error::NoProvider)?;
-
-        Ok(Self(Arc::new(Members {
-            preferred,
-            fallbacks: members.collect(),
-            health,
-        })))
+        Self(Arc::new(Members {
+            preferred: http(preferred),
+            fallbacks: fallbacks.iter().map(http).collect(),
+            health: Health::new(meter, labels),
+        }))
     }
 }
 

@@ -49,7 +49,7 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
         max_range_size = config.chain.max_range_size,
         poll_interval = ?config.chain.poll_interval,
         finality_depth = config.finality_depth,
-        providers = config.rpc.urls.len(),
+        providers = 1 + config.rpc.fallbacks.len(),
         rpc_timeout = ?config.rpc.timeout,
         spoke = %config.spoke,
         hub = %config.hub,

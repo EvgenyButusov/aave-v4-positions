@@ -6,8 +6,9 @@ use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use serde_json::Value;
 
+use crate::config::Config;
 use crate::harness::{harness, harness_within, head_read};
-use crate::providers::{Providers, label, method_of};
+use crate::providers::{Providers, method_of};
 use crate::scripted::{Reply, ScriptedNetwork, UNREACHABLE, at_head, failing};
 
 /// How the primary fails, its `error.type`, and the status it is counted under, if any.
@@ -121,10 +122,14 @@ async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
         .await;
     let secondary = network.node("secondary", at_head(100)).await;
 
+    let config = Config {
+        preferred: url::Url::parse(&primary.url).unwrap(),
+        fallbacks: vec![url::Url::parse(&secondary.url).unwrap()],
+        timeout: Duration::from_secs(5),
+    };
     let providers = Providers::new(
-        &url::Url::parse(&primary.url).unwrap(),
-        &[url::Url::parse(&secondary.url).unwrap()],
-        &crate::http::client(Duration::from_secs(5)).unwrap(),
+        &config,
+        &crate::http::client(config.timeout).unwrap(),
         &SdkMeterProvider::default().meter("test"),
     );
     let answer = RpcClient::new(providers, false)
@@ -133,15 +138,6 @@ async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
 
     assert!(answer.is_err());
     assert_eq!(network.asked(), [("primary".into(), "eth_call".into())]);
-}
-
-#[test]
-fn labels_a_provider_by_host_so_its_key_never_reaches_a_metric() {
-    let keyed = url::Url::parse("https://eth.example/v2/the-providers-key").unwrap();
-    let ported = url::Url::parse("http://localhost:8545/?key=secret").unwrap();
-
-    assert_eq!(label(&keyed), "eth.example");
-    assert_eq!(label(&ported), "localhost:8545");
 }
 
 #[test]

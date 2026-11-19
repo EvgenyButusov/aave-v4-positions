@@ -1,7 +1,13 @@
+#[cfg(test)]
+mod tests;
+
+use std::iter;
 use std::time::Duration;
 
 use env::{Env, Invalid, Urls};
 use url::Url;
+
+use crate::providers::label;
 
 pub struct Config {
     pub preferred: Url,
@@ -25,5 +31,14 @@ impl Config {
             fallbacks: rest,
             timeout: env.millis("RPC_TIMEOUT_MS", 10_000, 100, 120_000)?,
         })
+    }
+
+    /// Each provider as the metrics label it, in the order tried.
+    #[must_use]
+    pub fn hosts(&self) -> Vec<String> {
+        iter::once(&self.preferred)
+            .chain(&self.fallbacks)
+            .map(label)
+            .collect()
     }
 }

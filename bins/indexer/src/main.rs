@@ -42,14 +42,14 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let config = Config::from_env()?;
     let telemetry = telemetry::init(config.telemetry)?;
 
-    // The providers are counted and never listed: each URL carries its key.
+    // Hosts, never URLs: a provider's URL carries its key.
     tracing::info!(
         chain_id = config.chain.chain_id.get(),
         start_block = config.chain.start_block,
         max_range_size = config.chain.max_range_size,
         poll_interval = ?config.chain.poll_interval,
         finality_depth = config.finality_depth,
-        providers = 1 + config.rpc.fallbacks.len(),
+        providers = %config.rpc.hosts().join(", "),
         rpc_timeout = ?config.rpc.timeout,
         spoke = %config.spoke,
         hub = %config.hub,

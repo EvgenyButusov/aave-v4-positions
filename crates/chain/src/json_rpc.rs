@@ -85,12 +85,7 @@ impl JsonRpc {
     ///
     /// [`Error`] when no HTTP client can be built.
     pub fn connect(config: &Config, meter: &Meter) -> Result<Self, Error> {
-        let providers = Providers::new(
-            &config.preferred,
-            &config.fallbacks,
-            &http::client(config.timeout)?,
-            meter,
-        );
+        let providers = Providers::new(config, &http::client(config.timeout)?, meter);
 
         Ok(Self {
             client: RpcClient::new(providers, false),

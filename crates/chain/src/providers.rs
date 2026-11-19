@@ -8,7 +8,6 @@ mod health;
 #[cfg(test)]
 mod tests;
 
-use std::iter;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -20,6 +19,8 @@ use opentelemetry::metrics::Meter;
 use tower::{Service, ServiceExt as _};
 use tracing::Instrument as _;
 use url::Url;
+
+use crate::config::Config;
 
 use health::{Answer, Health};
 
@@ -33,19 +34,13 @@ struct Members {
 }
 
 impl Providers {
-    pub(crate) fn new(
-        preferred: &Url,
-        fallbacks: &[Url],
-        client: &reqwest::Client,
-        meter: &Meter,
-    ) -> Self {
+    pub(crate) fn new(config: &Config, client: &reqwest::Client, meter: &Meter) -> Self {
         let http = |url: &Url| Http::with_client(client.clone(), url.clone());
-        let labels = iter::once(preferred).chain(fallbacks).map(label).collect();
 
         Self(Arc::new(Members {
-            preferred: http(preferred),
-            fallbacks: fallbacks.iter().map(http).collect(),
-            health: Health::new(meter, labels),
+            preferred: http(&config.preferred),
+            fallbacks: config.fallbacks.iter().map(http).collect(),
+            health: Health::new(meter, config.hosts()),
         }))
     }
 }
@@ -107,7 +102,7 @@ impl Service<RequestPacket> for Providers {
 }
 
 /// The host and a non-default port, and never the path: a provider's key is often in it.
-fn label(url: &Url) -> String {
+pub(crate) fn label(url: &Url) -> String {
     let host = url.host_str().unwrap_or("unknown");
 
     match url.port() {

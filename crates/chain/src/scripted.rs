@@ -13,7 +13,7 @@ pub(crate) enum Reply {
     Result(Value),
     Error { code: i64, message: &'static str },
     Status(u16),
-    RateLimited { retry_after_secs: u64 },
+    RateLimited { retry_after: u64 },
     NotJsonRpc(&'static str),
     Hang,
 }
@@ -109,9 +109,9 @@ async fn answer(State(answering): State<Answering>, Json(request): Json<Value>) 
         Reply::Status(status) => {
             (StatusCode::from_u16(status).unwrap(), "upstream error").into_response()
         }
-        Reply::RateLimited { retry_after_secs } => (
+        Reply::RateLimited { retry_after } => (
             StatusCode::TOO_MANY_REQUESTS,
-            [(header::RETRY_AFTER, retry_after_secs.to_string())],
+            [(header::RETRY_AFTER, retry_after.to_string())],
             "slow down",
         )
             .into_response(),
@@ -129,9 +129,45 @@ pub(crate) fn in_turn(
     move |_, _| reply(asked.fetch_add(1, Ordering::Relaxed))
 }
 
+pub(crate) fn at_head(height: u64) -> impl Fn(&str, &Value) -> Reply + Send + Sync + 'static {
+    move |_, _| Reply::Result(hex(height))
+}
+
+pub(crate) fn failing(_: &str, _: &Value) -> Reply {
+    Reply::Status(500)
+}
+
+/// At head 100, except on the calls `down` picks by their position, where it answers 503.
+pub(crate) fn at_head_except(
+    down: impl Fn(usize) -> bool + Send + Sync + 'static,
+) -> impl Fn(&str, &Value) -> Reply + Send + Sync + 'static {
+    in_turn(move |nth| {
+        if down(nth) {
+            Reply::Status(503)
+        } else {
+            Reply::Result(hex(100))
+        }
+    })
+}
+
 /// Port 1, where nothing listens: a provider that is down rather than slow.
 pub(crate) const UNREACHABLE: &str = "http://127.0.0.1:1";
 
 pub(crate) fn hex(number: u64) -> Value {
     Value::String(format!("{number:#x}"))
+}
+
+pub(crate) fn hash(digit: char) -> String {
+    format!("0x{}", digit.to_string().repeat(64))
+}
+
+/// A header as a node serves it, with hash `0xaa…` and parent `0xbb…`.
+pub(crate) fn header(number: u64, timestamp: u64) -> Value {
+    json!({
+        "number": hex(number),
+        "hash": hash('a'),
+        "parentHash": hash('b'),
+        "timestamp": hex(timestamp),
+        "transactions": [],
+    })
 }

@@ -2,31 +2,23 @@ use std::time::Duration;
 
 use alloy_rpc_client::RpcClient;
 use indexing::ChainClient as _;
-use opentelemetry::KeyValue;
 use opentelemetry::metrics::MeterProvider as _;
-use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData, ResourceMetrics};
-use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use serde_json::Value;
-use tracing::instrument::WithSubscriber as _;
-use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::harness::{Harness, harness, harness_within};
+use crate::harness::{harness, harness_within, head_read};
 use crate::providers::{Providers, label, method_of};
-use crate::scripted::{Reply, ScriptedNetwork, UNREACHABLE, hex, in_turn};
+use crate::scripted::{Reply, ScriptedNetwork, UNREACHABLE, at_head, failing};
 
-fn head(height: u64) -> impl Fn(&str, &Value) -> Reply + Send + Sync + 'static {
-    move |_, _| Reply::Result(hex(height))
-}
-
-fn failing(_: &str, _: &Value) -> Reply {
-    Reply::Status(500)
-}
+/// How the primary fails, its `error.type`, and the status it is counted under, if any.
+/// No reply is a port nothing listens on.
+type Failure = (Option<fn() -> Reply>, &'static str, Option<u16>);
 
 #[tokio::test]
-async fn uses_the_first_provider_while_it_is_healthy() {
+async fn uses_the_first_provider_while_it_is_healthy_and_attributes_the_call_to_it() {
     let network = ScriptedNetwork::new();
-    let primary = network.node("primary", head(100)).await;
-    let secondary = network.node("secondary", head(100)).await;
+    let primary = network.node("primary", at_head(100)).await;
+    let secondary = network.node("secondary", at_head(100)).await;
 
     let harness = harness(&[&primary.url, &secondary.url]);
     harness.rpc.head_block_number().await.unwrap();
@@ -35,34 +27,75 @@ async fn uses_the_first_provider_while_it_is_healthy() {
         network.asked(),
         [("primary".into(), "eth_blockNumber".into())]
     );
-}
-
-#[tokio::test]
-async fn falls_over_to_the_next_provider_when_the_first_is_down() {
-    let network = ScriptedNetwork::new();
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[UNREACHABLE, &secondary.url]);
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
-}
-
-#[tokio::test]
-async fn gives_a_failing_provider_exactly_one_attempt_before_falling_over() {
-    let network = ScriptedNetwork::new();
-    let primary = network.node("primary", failing).await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
     assert_eq!(
-        network.asked(),
-        [
-            ("primary".into(), "eth_blockNumber".into()),
-            ("secondary".into(), "eth_blockNumber".into()),
-        ]
+        harness.points("rpc.client.requests"),
+        [head_read(&primary.label, true, "http.status_code=200")]
     );
+    assert_eq!(
+        harness.points("rpc.client.duration"),
+        [head_read(&primary.label, true, "")]
+    );
+}
+
+#[tokio::test]
+async fn falls_over_past_each_kind_of_failure_and_counts_it_by_type() {
+    let failures: [Failure; 6] = [
+        (Some(|| Reply::Status(500)), "500", Some(500)),
+        (
+            Some(|| Reply::RateLimited { retry_after: 30 }),
+            "429",
+            Some(429),
+        ),
+        (
+            Some(|| Reply::Error {
+                code: -32005,
+                message: "rate limited",
+            }),
+            "-32005",
+            Some(200),
+        ),
+        (
+            Some(|| Reply::NotJsonRpc("<html>502 Bad Gateway</html>")),
+            "deserialize",
+            None,
+        ),
+        (Some(|| Reply::Hang), "timeout", None),
+        (None, "connect", None),
+    ];
+
+    for (reply, error_type, status) in failures {
+        let network = ScriptedNetwork::new();
+        let (url, label) = match reply {
+            Some(reply) => {
+                let primary = network.node("primary", move |_, _| reply()).await;
+                (primary.url, primary.label)
+            }
+            None => (UNREACHABLE.to_owned(), "127.0.0.1:1".to_owned()),
+        };
+        let secondary = network.node("secondary", at_head(100)).await;
+        let harness = harness_within(&[&url, &secondary.url], Duration::from_millis(200));
+
+        assert_eq!(
+            harness.rpc.head_block_number().await.unwrap(),
+            100,
+            "{error_type}"
+        );
+        assert_eq!(
+            harness.points("rpc.client.errors"),
+            [head_read(&label, true, &format!("error.type={error_type}"))],
+            "{error_type}"
+        );
+        let mut requests = vec![head_read(&secondary.label, false, "http.status_code=200")];
+        requests.extend(
+            status.map(|status| head_read(&label, true, &format!("http.status_code={status}"))),
+        );
+        requests.sort();
+        assert_eq!(
+            harness.points("rpc.client.requests"),
+            requests,
+            "{error_type}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -78,22 +111,6 @@ async fn surfaces_a_total_outage_after_one_sweep_of_the_list() {
 }
 
 #[tokio::test]
-async fn falls_over_on_a_json_rpc_refusal_as_on_a_transport_failure() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node("primary", |_, _| Reply::Error {
-            code: -32005,
-            message: "rate limited",
-        })
-        .await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
-}
-
-#[tokio::test]
 async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
     let network = ScriptedNetwork::new();
     let primary = network
@@ -102,14 +119,13 @@ async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
             message: "execution reverted",
         })
         .await;
-    let secondary = network.node("secondary", head(100)).await;
+    let secondary = network.node("secondary", at_head(100)).await;
 
-    let (_exporter, meters) = meters();
     let providers = Providers::new(
         &url::Url::parse(&primary.url).unwrap(),
         &[url::Url::parse(&secondary.url).unwrap()],
         &crate::http::client(Duration::from_secs(5)).unwrap(),
-        &meters.meter("test"),
+        &SdkMeterProvider::default().meter("test"),
     );
     let answer = RpcClient::new(providers, false)
         .request::<_, Value>("eth_call", ())
@@ -117,289 +133,6 @@ async fn takes_a_revert_as_the_answer_rather_than_asking_the_next_provider() {
 
     assert!(answer.is_err());
     assert_eq!(network.asked(), [("primary".into(), "eth_call".into())]);
-}
-
-#[tokio::test]
-async fn a_provider_that_never_answers_is_abandoned_at_the_timeout() {
-    let network = ScriptedNetwork::new();
-    let primary = network.node("primary", |_, _| Reply::Hang).await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness_within(&[&primary.url, &secondary.url], Duration::from_millis(200));
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes(
-                &primary.label,
-                true,
-                "eth_blockNumber",
-                "error.type=timeout"
-            ),
-            1
-        )]
-    );
-}
-
-#[tokio::test]
-async fn attributes_a_request_to_its_provider_and_method() {
-    let network = ScriptedNetwork::new();
-    let primary = network.node("primary", head(100)).await;
-
-    let harness = harness(&[&primary.url]);
-    harness.rpc.head_block_number().await.unwrap();
-
-    assert_eq!(
-        points(&harness, "rpc.client.requests"),
-        [(
-            attributes(
-                &primary.label,
-                true,
-                "eth_blockNumber",
-                "http.status_code=200"
-            ),
-            1
-        )]
-    );
-    assert_eq!(
-        histogram_labels(&harness, "rpc.client.duration"),
-        [vec![
-            "preferred=true".to_owned(),
-            format!("provider={}", primary.label),
-            "rpc.method=eth_blockNumber".to_owned(),
-        ]]
-    );
-}
-
-#[tokio::test]
-async fn counts_a_refused_status_as_a_request_and_an_error() {
-    let network = ScriptedNetwork::new();
-    let primary = network.node("primary", |_, _| Reply::Status(429)).await;
-
-    let harness = harness(&[&primary.url]);
-    let _ = harness.rpc.head_block_number().await;
-
-    assert_eq!(
-        points(&harness, "rpc.client.requests"),
-        [(
-            attributes(
-                &primary.label,
-                true,
-                "eth_blockNumber",
-                "http.status_code=429"
-            ),
-            1
-        )]
-    );
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes(&primary.label, true, "eth_blockNumber", "error.type=429"),
-            1
-        )]
-    );
-}
-
-#[tokio::test]
-async fn falls_over_past_a_rate_limit_and_counts_it_under_its_status() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node("primary", |_, _| Reply::RateLimited {
-            retry_after_secs: 30,
-        })
-        .await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes(&primary.label, true, "eth_blockNumber", "error.type=429"),
-            1
-        )]
-    );
-}
-
-#[tokio::test]
-async fn falls_over_past_an_answer_that_is_not_json_rpc_and_counts_it_undecodable() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node("primary", |_, _| {
-            Reply::NotJsonRpc("<html><body>502 Bad Gateway</body></html>")
-        })
-        .await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-
-    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes(
-                &primary.label,
-                true,
-                "eth_blockNumber",
-                "error.type=deserialize"
-            ),
-            1
-        )]
-    );
-}
-
-#[tokio::test]
-async fn counts_a_json_rpc_refusal_under_its_code() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node("primary", |_, _| Reply::Error {
-            code: -32005,
-            message: "rate limited",
-        })
-        .await;
-
-    let harness = harness(&[&primary.url]);
-    let _ = harness.rpc.head_block_number().await;
-
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes(&primary.label, true, "eth_blockNumber", "error.type=-32005"),
-            1
-        )]
-    );
-}
-
-#[tokio::test]
-async fn counts_a_refused_connection_as_an_error_and_still_fails() {
-    let harness = harness(&[UNREACHABLE]);
-
-    assert!(harness.rpc.head_block_number().await.is_err());
-    assert_eq!(
-        points(&harness, "rpc.client.errors"),
-        [(
-            attributes("127.0.0.1:1", true, "eth_blockNumber", "error.type=connect"),
-            1
-        )]
-    );
-    assert!(points(&harness, "rpc.client.requests").is_empty());
-}
-
-#[tokio::test]
-async fn counts_and_logs_a_failover_once_however_many_calls_it_serves() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node(
-            "primary",
-            in_turn(|nth| {
-                if nth == 0 {
-                    Reply::Result(hex(100))
-                } else {
-                    Reply::Status(503)
-                }
-            }),
-        )
-        .await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-    let lines = logged(async {
-        for _ in 0..4 {
-            harness.rpc.head_block_number().await.unwrap();
-        }
-    })
-    .await;
-
-    assert_eq!(
-        points(&harness, "rpc.client.failovers"),
-        [(
-            vec![
-                format!("previous_provider={}", primary.label),
-                format!("provider={}", secondary.label),
-            ],
-            1
-        )]
-    );
-    assert_eq!(lines.matches("rpc provider failover").count(), 1, "{lines}");
-}
-
-#[tokio::test]
-async fn does_not_report_the_first_successful_call_as_a_failover() {
-    let network = ScriptedNetwork::new();
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[UNREACHABLE, &secondary.url]);
-    let lines = logged(async {
-        harness.rpc.head_block_number().await.unwrap();
-    })
-    .await;
-
-    assert!(points(&harness, "rpc.client.failovers").is_empty());
-    assert!(!lines.contains("rpc provider"), "{lines}");
-}
-
-#[tokio::test]
-async fn logs_the_recovery_when_the_preferred_provider_answers_again() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node(
-            "primary",
-            in_turn(|nth| {
-                if nth == 1 {
-                    Reply::Status(503)
-                } else {
-                    Reply::Result(hex(100))
-                }
-            }),
-        )
-        .await;
-    let secondary = network.node("secondary", head(100)).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-    let lines = logged(async {
-        for _ in 0..3 {
-            harness.rpc.head_block_number().await.unwrap();
-        }
-    })
-    .await;
-
-    assert_eq!(lines.matches("rpc provider failover").count(), 1, "{lines}");
-    assert_eq!(
-        lines.matches("rpc provider recovered").count(),
-        1,
-        "{lines}"
-    );
-    assert_eq!(points(&harness, "rpc.client.failovers").len(), 1);
-}
-
-#[tokio::test]
-async fn does_not_hand_over_to_a_provider_that_only_errored() {
-    let network = ScriptedNetwork::new();
-    let primary = network
-        .node(
-            "primary",
-            in_turn(|nth| {
-                if nth == 0 {
-                    Reply::Result(hex(100))
-                } else {
-                    Reply::Status(503)
-                }
-            }),
-        )
-        .await;
-    let secondary = network.node("secondary", failing).await;
-
-    let harness = harness(&[&primary.url, &secondary.url]);
-    let lines = logged(async {
-        harness.rpc.head_block_number().await.unwrap();
-        let _ = harness.rpc.head_block_number().await;
-    })
-    .await;
-
-    assert!(points(&harness, "rpc.client.failovers").is_empty());
-    assert!(!lines.contains("rpc provider"), "{lines}");
 }
 
 #[test]
@@ -427,88 +160,4 @@ fn calls_a_batch_a_batch_rather_than_naming_it_after_its_first_call() {
 
     assert_eq!(method_of(&single), "eth_getLogs");
     assert_eq!(method_of(&batch), "batch");
-}
-
-fn meters() -> (InMemoryMetricExporter, SdkMeterProvider) {
-    let exporter = InMemoryMetricExporter::default();
-    let meters = SdkMeterProvider::builder()
-        .with_reader(PeriodicReader::builder(exporter.clone()).build())
-        .build();
-
-    (exporter, meters)
-}
-
-async fn logged(work: impl Future<Output = ()>) -> String {
-    test_tracing::interesting();
-
-    let (captured, lines) = test_tracing::Captured::new();
-    let subscriber = tracing_subscriber::registry().with(
-        tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .without_time()
-            .with_writer(captured),
-    );
-    work.with_subscriber(subscriber).await;
-
-    lines.read()
-}
-
-fn attributes(provider: &str, preferred: bool, method: &str, extra: &str) -> Vec<String> {
-    let mut labels = vec![
-        extra.to_owned(),
-        format!("preferred={preferred}"),
-        format!("provider={provider}"),
-        format!("rpc.method={method}"),
-    ];
-    labels.sort();
-    labels
-}
-
-fn labels<'a>(attributes: impl Iterator<Item = &'a KeyValue>) -> Vec<String> {
-    let mut labels: Vec<String> = attributes
-        .map(|attribute| format!("{}={}", attribute.key, attribute.value.as_str()))
-        .collect();
-    labels.sort();
-    labels
-}
-
-fn collected(harness: &Harness) -> Vec<ResourceMetrics> {
-    harness.exporter.reset();
-    harness.meters.force_flush().expect("a collection");
-    harness
-        .exporter
-        .get_finished_metrics()
-        .expect("the exported batches")
-}
-
-fn points(harness: &Harness, name: &str) -> Vec<(Vec<String>, u64)> {
-    collected(harness)
-        .iter()
-        .flat_map(ResourceMetrics::scope_metrics)
-        .flat_map(|scope| scope.metrics())
-        .filter(|metric| metric.name() == name)
-        .flat_map(|metric| match metric.data() {
-            AggregatedMetrics::U64(MetricData::Sum(sum)) => sum
-                .data_points()
-                .map(|point| (labels(point.attributes()), point.value()))
-                .collect(),
-            _ => Vec::new(),
-        })
-        .collect()
-}
-
-fn histogram_labels(harness: &Harness, name: &str) -> Vec<Vec<String>> {
-    collected(harness)
-        .iter()
-        .flat_map(ResourceMetrics::scope_metrics)
-        .flat_map(|scope| scope.metrics())
-        .filter(|metric| metric.name() == name)
-        .flat_map(|metric| match metric.data() {
-            AggregatedMetrics::F64(MetricData::Histogram(histogram)) => histogram
-                .data_points()
-                .map(|point| labels(point.attributes()))
-                .collect(),
-            _ => Vec::new(),
-        })
-        .collect()
 }

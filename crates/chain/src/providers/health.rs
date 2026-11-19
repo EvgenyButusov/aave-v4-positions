@@ -1,6 +1,9 @@
 //! Who is answering, and who has stopped. Without it a dead preferred provider is silent: the next
 //! one serves every call and nothing says so.
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Mutex;
 use std::time::Duration;
 

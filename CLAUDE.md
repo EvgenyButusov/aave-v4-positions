@@ -31,6 +31,14 @@ CI runs the same two images with no password at all — `CLICKHOUSE_SKIP_USER_SE
 `POSTGRES_HOST_AUTH_METHOD: trust` — and sets none of these variables, so the readers' own defaults
 apply there. A suite that passes only locally is reading something CI will not give it.
 
+## What a position is worth
+
+**A page is valued at the clock, not at the indexed block.** A caller wants what their position is
+worth now, interest projected to this second, not what it was worth at `sync.last_block`. With no
+`as_of`, the store values at its own `now()`; `as_of` is how a caller pins an instant. `sync` and
+`valued_at` are two clocks on purpose, so do not anchor the default to the indexer's head however
+inconsistent the pair looks to a reviewer. `names_no_instant_when_the_caller_named_none` holds it.
+
 ## Comments
 
 **The code is the explanation. A comment earns its place by saying what the code cannot.**

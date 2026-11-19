@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-use aave_positions::store::{Position, PositionAsset, PositionKey, PositionPage};
+use aave_positions::store::{Position, PositionAsset, PositionKey, PositionPage, PositionQuery};
 use aave_positions::valuation::Valuation;
 use alloy_primitives::{Address, I256, U256, uint};
 use axum::body::Body;
@@ -564,4 +564,59 @@ mod the_deadline {
 
         assert_eq!(status, StatusCode::OK);
     }
+}
+
+#[tokio::test]
+async fn hands_the_store_every_parameter_it_parsed() {
+    let issuing = Stores {
+        page: PositionPage {
+            items: vec![held()],
+            valued_at: VALUED_AT,
+            next: Some(PositionKey {
+                spoke: address(SPOKE),
+                reserve_id: U256::from(7),
+            }),
+        },
+        ..Stores::default()
+    };
+    let (_, body) = answer(issuing, &format!("?spoke={SPOKE}")).await;
+    let page: serde_json::Value = serde_json::from_str(&body).expect("a JSON body");
+    let cursor = page["next_cursor"].as_str().expect("a cursor").to_owned();
+
+    let stores = Stores::default();
+    let queries = stores.queries.clone();
+    let (status, body) = answer(
+        stores,
+        &format!("?spoke={SPOKE}&limit=3&cursor={cursor}&as_of=1780000000"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        *queries.lock().unwrap(),
+        [PositionQuery {
+            chain_id: ChainId::known(1),
+            user: address(ALICE),
+            spoke: Some(address(SPOKE)),
+            limit: 3,
+            after: Some(PositionKey {
+                spoke: address(SPOKE),
+                reserve_id: U256::from(7),
+            }),
+            as_of: Some(1_780_000_000),
+        }]
+    );
+}
+
+/// A caller wants what the position is worth now, projected interest
+/// included, so the store values at its clock and not at `sync.last_block`.
+#[tokio::test]
+async fn names_no_instant_when_the_caller_named_none() {
+    let stores = Stores::default();
+    let queries = stores.queries.clone();
+
+    let (status, body) = answer(stores, "").await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(queries.lock().unwrap()[0].as_of, None);
 }

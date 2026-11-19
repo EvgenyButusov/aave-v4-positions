@@ -9,7 +9,7 @@
 //! readiness probe.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -106,6 +106,9 @@ pub(crate) struct Stores {
     /// the port-1 pool cannot express: that is a dependency which is *down*.
     pub(crate) positions_hang: bool,
 
+    /// Every query the position store was handed, in order.
+    pub(crate) queries: Arc<Mutex<Vec<PositionQuery>>>,
+
     /// How many times the price store was asked; the point is the answer `0`,
     /// because an explicit `as_of` skips the read rather than discarding it.
     pub(crate) price_reads: Arc<AtomicUsize>,
@@ -125,6 +128,7 @@ impl Default for Stores {
             staleness: STALENESS,
             request_timeout: PATIENT,
             positions_hang: false,
+            queries: Arc::new(Mutex::new(Vec::new())),
             price_reads: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -159,6 +163,7 @@ impl Stores {
             positions: Box::new(Positions {
                 page: self.page,
                 hang: self.positions_hang,
+                queries: Arc::clone(&self.queries),
             }),
             tokens: Box::new(Labels(self.labels)),
             prices: Box::new(Prices {
@@ -183,11 +188,16 @@ impl Stores {
 struct Positions {
     page: PositionPage,
     hang: bool,
+    queries: Arc<Mutex<Vec<PositionQuery>>>,
 }
 
 #[async_trait::async_trait]
 impl PositionStore for Positions {
-    async fn list(&self, _query: &PositionQuery) -> Result<PositionPage, StoreError> {
+    async fn list(&self, query: &PositionQuery) -> Result<PositionPage, StoreError> {
+        self.queries
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .push(query.clone());
         if self.hang {
             std::future::pending::<()>().await;
         }

@@ -6,38 +6,22 @@ use std::sync::Arc;
 use axum::Router;
 use clickhouse_client::clickhouse::Client;
 use ops::{ShutdownFlag, Uptime};
-use postgres::{Limits, Pool};
+use postgres::ProbePool;
 
 use crate::stall::Stall;
 
 pub(crate) struct Dependencies {
     stall: Stall,
     clickhouse: Client,
-    postgres: Pool,
+    postgres: ProbePool,
 }
 
-/// `max_size: 1`: the probe's own connection, which the loop's writes can never hold.
-///
-/// # Errors
-///
-/// Whatever [`postgres::build_pool`] refuses the URL for.
-pub(crate) fn dependencies(
-    stall: Stall,
-    clickhouse: Client,
-    postgres_url: &str,
-    limits: Limits,
-) -> Result<Dependencies, postgres::Error> {
-    Ok(Dependencies {
+pub(crate) fn dependencies(stall: Stall, clickhouse: Client, postgres: ProbePool) -> Dependencies {
+    Dependencies {
         stall,
         clickhouse,
-        postgres: postgres::build_pool(
-            postgres_url,
-            Limits {
-                max_size: 1,
-                ..limits
-            },
-        )?,
-    })
+        postgres,
+    }
 }
 
 pub(crate) fn routes(uptime: Uptime, shutdown: ShutdownFlag, dependencies: Dependencies) -> Router {
@@ -92,10 +76,12 @@ mod tests {
         dependencies(
             Stall::new(status, Duration::from_secs(300)),
             clickhouse,
-            &postgres::read_url(&env).unwrap(),
-            Limits::default(),
+            postgres::probe_pool(
+                &postgres::read_url(&env).unwrap(),
+                postgres::Limits::default(),
+            )
+            .unwrap(),
         )
-        .unwrap()
     }
 
     async fn ready(status: Arc<IndexerStatus>) -> (StatusCode, String) {

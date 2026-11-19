@@ -515,9 +515,9 @@ Postgres half of that binary. A deployment outside Compose must preserve the sam
 the API at an empty or wrong database is a configuration failure to reject in that gate or at
 startup, not a transient condition to rediscover every ten seconds.
 
-Readiness connects through a pool of its own, `max_size: 1`. Holding every connection of a
-request-sized pool and then probing through it answers 503; probing through the separate pool
-answers 200, in the same case. Not `Timeouts::wait_millis(0)`, which deadpool turns into a
+Readiness connects through a pool of its own, `max_size: 1`: `postgres::ProbePool`, the only pool
+`ping` takes, so the pool that serves requests or writes cannot be handed to readiness at all.
+Holding every connection of a request-sized pool still leaves the probe answering 200. Not `Timeouts::wait_millis(0)`, which deadpool turns into a
 non-blocking `try_acquire` and which reports a busy pool as a down database.
 
 Its body now carries the error's own message and nothing under it. `error_message_with_causes`

@@ -61,9 +61,8 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let probes = probes::dependencies(
         Stall::new(status, config.stall_threshold),
         clickhouse_client::build_client(config.clickhouse)?,
-        &config.postgres_url,
-        config.postgres_limits,
-    )?;
+        postgres::probe_pool(&config.postgres_url, config.postgres_limits)?,
+    );
 
     let shutdown = ShutdownFlag::new();
     let router = probes::routes(uptime, shutdown.clone(), probes);
@@ -110,10 +109,12 @@ mod tests {
         probes::dependencies(
             Stall::new(Arc::new(IndexerStatus::new()), Duration::from_secs(300)),
             clickhouse,
-            "postgres://postgres@127.0.0.1:1/postgres?sslmode=disable",
-            postgres::Limits::default(),
+            postgres::probe_pool(
+                "postgres://postgres@127.0.0.1:1/postgres?sslmode=disable",
+                postgres::Limits::default(),
+            )
+            .unwrap(),
         )
-        .unwrap()
     }
 
     #[tokio::test]

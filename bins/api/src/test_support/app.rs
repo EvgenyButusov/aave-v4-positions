@@ -23,7 +23,7 @@ use axum::response::IntoResponse;
 use clickhouse_client::clickhouse::Client;
 use indexing::{Error as SyncError, SyncStatus, SyncStatusStore};
 use ops::{ShutdownFlag, Uptime};
-use postgres::Pool;
+use postgres::ProbePool;
 use prices::{Error as PriceError, ReserveKey, ReservePrice, ReservePriceStore};
 use time::OffsetDateTime;
 use token_metadata::{Error as LabelError, TokenLabel, TokenMetadataStore};
@@ -68,25 +68,25 @@ pub(crate) fn postgres_url() -> String {
     })
 }
 
-pub(crate) fn postgres() -> Pool {
-    ::postgres::build_pool(&postgres_url(), ::postgres::Limits::default()).unwrap()
+pub(crate) fn postgres() -> ProbePool {
+    ::postgres::probe_pool(&postgres_url(), ::postgres::Limits::default()).unwrap()
 }
 
 /// Port 1 is reserved and nothing listens on it, so the pool's first dial is
 /// refused — a dependency that is down rather than one that is slow.
-pub(crate) fn unreachable_postgres() -> Pool {
-    ::postgres::build_pool(
+pub(crate) fn unreachable_postgres() -> ProbePool {
+    ::postgres::probe_pool(
         "postgres://postgres@127.0.0.1:1/postgres",
         ::postgres::Limits::default(),
     )
     .unwrap()
 }
 
-pub(crate) fn state(postgres: Pool) -> App {
+pub(crate) fn state(postgres: ProbePool) -> App {
     Stores::default().app(postgres)
 }
 
-pub(crate) fn handler(postgres: Pool) -> Router {
+pub(crate) fn handler(postgres: ProbePool) -> Router {
     app::handler(state(postgres))
 }
 
@@ -151,11 +151,11 @@ pub(crate) fn synced() -> SyncStatus {
 }
 
 impl Stores {
-    pub(crate) fn app(self, postgres: Pool) -> App {
+    pub(crate) fn app(self, postgres: ProbePool) -> App {
         App {
             uptime: Uptime::now(),
             shutdown: ShutdownFlag::new(),
-            probes: crate::probes::from_pool(clickhouse(), postgres),
+            probes: crate::probes::dependencies(clickhouse(), postgres),
             positions: Box::new(Positions {
                 page: self.page,
                 hang: self.positions_hang,

@@ -1,5 +1,28 @@
 use crate::error::Error;
-use crate::pool::{Pool, connection};
+use crate::pool::{Limits, Pool, build_pool, connection};
+
+/// The only pool [`ping`] takes, so readiness cannot be handed the pool that
+/// does the work and queue behind it.
+#[derive(Debug, Clone)]
+pub struct ProbePool(Pool);
+
+/// One connection, whatever `limits.max_size` says. Not `Timeouts::wait_millis(0)`
+/// on a shared pool: deadpool turns a zero wait into a non-blocking `try_acquire`
+/// and would report a busy pool as a down database.
+///
+/// # Errors
+///
+/// Whatever [`build_pool`] refuses the URL for.
+pub fn probe_pool(url: &str, limits: Limits) -> Result<ProbePool, Error> {
+    build_pool(
+        url,
+        Limits {
+            max_size: 1,
+            ..limits
+        },
+    )
+    .map(ProbePool)
+}
 
 /// Reports Postgres able to serve a query.
 ///
@@ -13,7 +36,7 @@ use crate::pool::{Pool, connection};
 ///
 /// [`Error::ConnectFailed`] if no connection can be had, [`Error::PingFailed`]
 /// if the server refuses the query.
-pub async fn ping(pool: &Pool) -> Result<(), Error> {
+pub async fn ping(ProbePool(pool): &ProbePool) -> Result<(), Error> {
     connection(pool)
         .await?
         .simple_query("SELECT 1")
@@ -25,13 +48,12 @@ pub async fn ping(pool: &Pool) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pool::{Limits, build_pool};
 
-    fn pool(url: &str) -> Pool {
-        build_pool(url, Limits::default()).expect("a parseable URL")
+    fn pool(url: &str) -> ProbePool {
+        probe_pool(url, Limits::default()).expect("a parseable URL")
     }
 
-    fn served() -> Pool {
+    fn served() -> ProbePool {
         pool(&std::env::var("POSTGRES_URL").unwrap_or_else(|_| {
             "postgres://postgres@localhost:5432/postgres?sslmode=disable".to_owned()
         }))
@@ -46,5 +68,17 @@ mod tests {
             .expect_err("port 1 is reserved");
 
         assert_eq!(refused.to_string(), "could not connect to Postgres");
+    }
+
+    #[test]
+    fn a_probe_pool_holds_one_connection_whatever_the_limits_say() {
+        let limits = Limits {
+            max_size: 8,
+            ..Limits::default()
+        };
+        let ProbePool(pool) =
+            probe_pool("postgres://postgres@127.0.0.1:1/nothing", limits).unwrap();
+
+        assert_eq!(pool.status().max_size, 1);
     }
 }

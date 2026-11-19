@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use alloy_primitives::{Address, B256, Bytes, address, b256};
 use indexing::{BlockHeader, ChainClient as _, ChainError, LogFilter, LogReader as _, RawLog};
 use serde_json::{Value, json};
 use units::ChainId;
 
+use super::{Log, Unexpected};
 use crate::node::{Network, Reply, client, hex};
 
 const SPOKE: Address = address!("0x94e7a5dcbe816e498b89ab752661904e2f56c485");
@@ -314,6 +317,34 @@ async fn refuses_a_log_that_belongs_to_no_block() {
         matches!(refusal, ChainError::Unavailable { .. }),
         "{refusal}"
     );
+}
+
+#[test]
+fn refuses_a_log_missing_any_one_field_that_places_it_in_a_block() {
+    for field in [
+        "blockNumber",
+        "blockHash",
+        "transactionHash",
+        "transactionIndex",
+        "logIndex",
+    ] {
+        let mut pending = log(150, 0, Some(1));
+        pending[field] = Value::Null;
+        let log: Log = serde_json::from_value(pending).unwrap();
+
+        let refusal = log.into_raw(&HashMap::new()).unwrap_err();
+
+        assert!(matches!(refusal, Unexpected::Pending), "{field}: {refusal}");
+    }
+}
+
+#[test]
+fn refuses_a_log_whose_timestamp_neither_it_nor_a_header_gave() {
+    let log: Log = serde_json::from_value(log(150, 0, None)).unwrap();
+
+    let refusal = log.into_raw(&HashMap::from([(151, 1510)])).unwrap_err();
+
+    assert!(matches!(refusal, Unexpected::NoTimestamp(150)), "{refusal}");
 }
 
 #[tokio::test]

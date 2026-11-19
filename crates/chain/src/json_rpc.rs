@@ -34,8 +34,11 @@ enum Unexpected {
     #[error("the provider has no block {0}, below a head it reported")]
     NoBlock(u64),
 
-    #[error("eth_getLogs returned a log with no block for {from}..={to}")]
-    Pending { from: u64, to: u64 },
+    #[error("eth_getLogs returned a pending log for a bounded block range")]
+    Pending,
+
+    #[error("no timestamp for block {0}: the log carried none and no header was read")]
+    NoTimestamp(u64),
 }
 
 /// Four fields, so a chain whose header adds or omits the rest still parses.
@@ -176,36 +179,34 @@ impl LogReader for JsonRpc {
         let filled = self.timestamps(&logs).await?;
 
         logs.into_iter()
-            .map(|log| {
-                mined(log, &filled).ok_or_else(|| {
-                    unavailable(Unexpected::Pending {
-                        from: filter.from_block,
-                        to: filter.to_block,
-                    })
-                })
-            })
+            .map(|log| log.into_raw(&filled).map_err(unavailable))
             .collect()
     }
 }
 
-/// `None` for a log that belongs to no block, which a bounded range cannot return.
-fn mined(log: Log, filled: &HashMap<u64, u64>) -> Option<RawLog> {
-    let block_number = log.block_number?.to();
+impl Log {
+    /// `filled` holds the timestamp of each block whose logs arrived without one.
+    fn into_raw(self, filled: &HashMap<u64, u64>) -> Result<RawLog, Unexpected> {
+        let block_number = self.block_number.ok_or(Unexpected::Pending)?.to();
+        let block_timestamp = match self.block_timestamp {
+            Some(timestamp) => timestamp.to(),
+            None => *filled
+                .get(&block_number)
+                .ok_or(Unexpected::NoTimestamp(block_number))?,
+        };
 
-    Some(RawLog {
-        address: log.address,
-        topics: log.topics,
-        data: log.data,
-        block_number,
-        block_hash: log.block_hash?,
-        block_timestamp: log
-            .block_timestamp
-            .map(|timestamp| timestamp.to())
-            .or_else(|| filled.get(&block_number).copied())?,
-        transaction_hash: log.transaction_hash?,
-        transaction_index: log.transaction_index?.to(),
-        log_index: log.log_index?.to(),
-    })
+        Ok(RawLog {
+            address: self.address,
+            topics: self.topics,
+            data: self.data,
+            block_number,
+            block_hash: self.block_hash.ok_or(Unexpected::Pending)?,
+            block_timestamp,
+            transaction_hash: self.transaction_hash.ok_or(Unexpected::Pending)?,
+            transaction_index: self.transaction_index.ok_or(Unexpected::Pending)?.to(),
+            log_index: self.log_index.ok_or(Unexpected::Pending)?.to(),
+        })
+    }
 }
 
 fn refused(filter: &LogFilter, error: TransportError) -> ChainError {

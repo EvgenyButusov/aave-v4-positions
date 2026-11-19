@@ -83,6 +83,8 @@ before writing one; put the note on a `//` line above the item instead.
   reference beside the code it shaped — `docs/rust-migration.md` has the table — and say when a
   reference was read and then declined.
 - The Rust does not name the TypeScript it replaces. Comparisons live in the migration doc.
+- An error variant names what went wrong, not what it was about. `NoProvider`, `NotAUrl` and
+  `ConnectFailed` each say what happened; a bare noun such as `Client` leaves the reader to guess.
 
 ## Changes
 

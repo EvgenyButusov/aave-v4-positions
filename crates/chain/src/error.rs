@@ -16,7 +16,7 @@ pub enum Error {
     },
 
     #[error("the HTTP client could not be built")]
-    Client {
+    ClientCantBeBuilt {
         #[source]
         source: reqwest::Error,
     },

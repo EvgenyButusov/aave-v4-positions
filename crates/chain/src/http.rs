@@ -13,7 +13,7 @@ pub(crate) fn client(timeout: Duration) -> Result<reqwest::Client, Error> {
         .use_preconfigured_tls(tls()?)
         .timeout(timeout)
         .build()
-        .map_err(|source| Error::Client { source })
+        .map_err(|source| Error::ClientCantBeBuilt { source })
 }
 
 /// The host's roots under `ring`, named rather than resolved: a process default derived from

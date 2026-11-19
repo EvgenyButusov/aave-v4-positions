@@ -202,6 +202,55 @@ async fn counts_a_refused_status_as_a_request_and_an_error() {
 }
 
 #[tokio::test]
+async fn falls_over_past_a_rate_limit_and_counts_it_under_its_status() {
+    let network = ScriptedNetwork::new();
+    let primary = network
+        .node("primary", |_, _| Reply::RateLimited {
+            retry_after_secs: 30,
+        })
+        .await;
+    let secondary = network.node("secondary", head(100)).await;
+
+    let harness = harness(&[&primary.url, &secondary.url]);
+
+    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
+    assert_eq!(
+        points(&harness, "rpc.client.errors"),
+        [(
+            attributes(&primary.label, true, "eth_blockNumber", "error.type=429"),
+            1
+        )]
+    );
+}
+
+#[tokio::test]
+async fn falls_over_past_an_answer_that_is_not_json_rpc_and_counts_it_undecodable() {
+    let network = ScriptedNetwork::new();
+    let primary = network
+        .node("primary", |_, _| {
+            Reply::NotJsonRpc("<html><body>502 Bad Gateway</body></html>")
+        })
+        .await;
+    let secondary = network.node("secondary", head(100)).await;
+
+    let harness = harness(&[&primary.url, &secondary.url]);
+
+    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
+    assert_eq!(
+        points(&harness, "rpc.client.errors"),
+        [(
+            attributes(
+                &primary.label,
+                true,
+                "eth_blockNumber",
+                "error.type=deserialize"
+            ),
+            1
+        )]
+    );
+}
+
+#[tokio::test]
 async fn counts_a_json_rpc_refusal_under_its_code() {
     let network = ScriptedNetwork::new();
     let primary = network

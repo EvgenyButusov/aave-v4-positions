@@ -5,7 +5,7 @@ use std::sync::{Arc, mpsc};
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
@@ -13,6 +13,8 @@ pub(crate) enum Reply {
     Result(Value),
     Error { code: i64, message: &'static str },
     Status(u16),
+    RateLimited { retry_after_secs: u64 },
+    NotJsonRpc(&'static str),
     Hang,
 }
 
@@ -107,6 +109,13 @@ async fn answer(State(answering): State<Answering>, Json(request): Json<Value>) 
         Reply::Status(status) => {
             (StatusCode::from_u16(status).unwrap(), "upstream error").into_response()
         }
+        Reply::RateLimited { retry_after_secs } => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after_secs.to_string())],
+            "slow down",
+        )
+            .into_response(),
+        Reply::NotJsonRpc(body) => body.into_response(),
         Reply::Hang => std::future::pending().await,
     }
 }

@@ -10,6 +10,7 @@
 //! balance, and what a `LEFT JOIN` miss fills a column with.
 
 use alloy_primitives::{Address, I256, U256};
+use units::UnixSeconds;
 
 use super::fixtures::{ALICE, BOB, FIVE_PERCENT, RAY, SECOND_SPOKE, SPOKE, USDC, ask, reserve_ids};
 use super::{PositionKey, PositionPage, PositionQuery, PositionStore};
@@ -342,7 +343,7 @@ pub(crate) async fn values_every_position_on_a_page_at_one_instant<H: Harness>()
     let page = harness
         .store()
         .list(&PositionQuery {
-            as_of: Some(CHECKPOINT_AT + YEAR),
+            cut: UnixSeconds::new(CHECKPOINT_AT + YEAR),
             ..ask()
         })
         .await
@@ -351,38 +352,12 @@ pub(crate) async fn values_every_position_on_a_page_at_one_instant<H: Harness>()
     // Two positions, so one instant for the whole page is evidence rather than
     // a tautology (§12.6).
     assert_eq!(page.items.len(), 2);
-    assert_eq!(page.valued_at, CHECKPOINT_AT + YEAR);
     let indexes: std::collections::BTreeSet<_> = page
         .items
         .iter()
         .map(|item| item.value.as_ref().map(|value| value.drawn_index))
         .collect();
     assert_eq!(indexes.len(), 1);
-}
-
-pub(crate) async fn defaults_to_now_when_no_instant_is_named<H: Harness>() {
-    let harness = H::fresh("now").await;
-    harness.given_reserve(&listed("7", "7")).await;
-    harness
-        .given_positions(&[Held::supplying("7", "1000")])
-        .await;
-
-    let before = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
-    let page = harness.store().list(&ask()).await.unwrap();
-
-    // As the chain does: getUserDebt at `latest` extrapolates to the head.
-    assert!(page.valued_at >= before);
-    assert_ne!(
-        page.items[0]
-            .value
-            .as_ref()
-            .unwrap()
-            .drawn_index
-            .to_string(),
-        RAY
-    );
 }
 
 /// Every case above, as one `#[tokio::test]` each against one implementation.
@@ -404,7 +379,7 @@ async fn valued_at<H: Harness>(harness: &H, at: u64) -> PositionPage {
     harness
         .store()
         .list(&PositionQuery {
-            as_of: Some(at),
+            cut: UnixSeconds::new(at),
             ..ask()
         })
         .await
@@ -513,7 +488,6 @@ macro_rules! position_store_conformance {
             resumes_after_the_row_the_key_names_not_before_it
             reports_no_next_key_when_the_page_is_not_full
             values_every_position_on_a_page_at_one_instant
-            defaults_to_now_when_no_instant_is_named
             takes_the_checkpoint_in_force_not_the_newest_there_is
             carries_that_checkpoint_forward_rather_than_snapping_to_it
             reports_no_value_when_no_checkpoint_precedes_the_instant

@@ -11,12 +11,9 @@
 use utoipa::OpenApi;
 
 /// The version of the **API contract**, not of the package: a dependency bump
-/// must not imply anything about the shape of the responses.
-///
-/// `0.2.0` rather than the `0.1.0` this replaces — twenty-four payload keys, a
-/// query parameter and the timestamp format all move, and one version naming
-/// two shapes is what this field exists to prevent.
-const CONTRACT_VERSION: &str = "0.2.0";
+/// must not imply anything about the shape of the responses. It moves when a
+/// shape, a default or a refusal does.
+const CONTRACT_VERSION: &str = "0.3.0";
 
 const DESCRIPTION: &str = "\
 Indexed Aave v4 user positions, enriched and served for querying.
@@ -46,8 +43,8 @@ that reads as a rounding bug rather than a parse error.";
         name = "positions",
         description = "Folded from the Spoke event stream, enriched from the Hub and the \
                        reserve registry. Balances are shares; `value` is what they are worth \
-                       at the instant the page names. Every response carries the block it is \
-                       true as of, and the two clocks beside it.",
+                       at the instant the page names, which defaults to the timestamp of the \
+                       last indexed block that every response carries.",
     )),
 )]
 pub(crate) struct ApiDoc;

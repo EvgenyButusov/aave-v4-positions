@@ -11,6 +11,8 @@
 use aave_positions::store::PositionQuery;
 use axum::Json;
 use axum::extract::{Path, RawQuery, State};
+use indexing::SyncStatus;
+use units::UnixSeconds;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -91,15 +93,16 @@ behind unrelated collateral. Every row names the Spoke it came from.";
         (
             status = 400,
             description = "A malformed address, a limit outside its bounds, an unrecognised \
-                           query parameter, or a cursor this service did not issue for this \
-                           listing.",
+                           query parameter, an `as_of` later than the last indexed block, or a \
+                           cursor this service did not issue for this listing.",
             body = ErrorEnvelope,
         ),
         (
             status = 404,
             description = "This deployment has never indexed that chain, so it cannot answer \
                            for it. Also returned in the window between an indexer starting \
-                           and recording its first block.",
+                           and recording its first block, and, when `as_of` is not named, \
+                           while the last indexed block's header is not yet recorded.",
             body = ErrorEnvelope,
         ),
         // Both are `text/plain`, so neither can reuse the envelope the two
@@ -132,6 +135,8 @@ async fn list(
         )));
     };
 
+    let cut = cut(listing.as_of, &sync)?;
+
     let scope = Scope {
         chain_id: listing.chain_id,
         user: listing.user,
@@ -155,7 +160,7 @@ async fn list(
                 })
             })
             .transpose()?,
-        as_of: listing.as_of,
+        cut,
     };
 
     // Side by side: neither enrichment depends on which positions come back.
@@ -181,12 +186,30 @@ async fn list(
 
     Ok(Json(views::Page::new(
         &sync,
+        cut,
         &page,
         &labels,
         &prices,
         app.staleness,
         next_cursor,
     )?))
+}
+
+/// The default is the last indexed block's own timestamp, never this process's
+/// clock, so the cut and the `sync` stamped beside it describe one block.
+fn cut(as_of: Option<UnixSeconds>, sync: &SyncStatus) -> Result<UnixSeconds, ApiError> {
+    match (as_of, sync.last_block_timestamp) {
+        (Some(at), Some(head)) if at > head => Err(ApiError::bad_request(format!(
+            "as_of must be at most {head}, the timestamp of block {}, the last indexed",
+            sync.last_block
+        ))),
+        (Some(at), _) => Ok(at),
+        (None, Some(head)) => Ok(head),
+        (None, None) => Err(ApiError::not_found(format!(
+            "chain {} has no header recorded for block {}, the last indexed; name an as_of",
+            sync.chain_id, sync.last_block
+        ))),
+    }
 }
 
 #[cfg(test)]

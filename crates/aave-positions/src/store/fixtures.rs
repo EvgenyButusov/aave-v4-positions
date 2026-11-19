@@ -6,7 +6,7 @@
 //! [`super::clickhouse::harness`].
 
 use alloy_primitives::{Address, address};
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use super::{PositionPage, PositionQuery};
 
@@ -180,6 +180,8 @@ pub(super) fn update_asset(at: At, asset_id: &str, drawn_index: &str, drawn_rate
 pub(super) const CHECKPOINT_BLOCK: u64 = 100;
 pub(super) const CHECKPOINT_AT: u64 = T0 + CHECKPOINT_BLOCK;
 pub(super) const YEAR: u64 = 365 * 24 * 3600;
+/// Past every fixture's events, so a case that names no instant sees them all.
+pub(super) const AFTER_EVERY_EVENT: UnixSeconds = UnixSeconds::new(T0 + YEAR);
 /// 5% per annum, RAY-scaled, as `drawnRate` arrives on `UpdateAsset`.
 pub(super) const FIVE_PERCENT: &str = "50000000000000000000000000";
 
@@ -191,7 +193,7 @@ pub(super) fn ask() -> PositionQuery {
         spoke: Some(SPOKE),
         limit: 100,
         after: None,
-        as_of: None,
+        cut: AFTER_EVERY_EVENT,
     }
 }
 

@@ -599,6 +599,14 @@ Each is a PR, and each ends with a gate run against the TypeScript implementatio
 service** — the Rust API goes to production and the TypeScript API is deleted before indexer work
 finishes, rather than one switch at the end.
 
+### The default cut is the indexed head's, not the clock's
+
+A page without `as_of` was valued at the API process's `now()` while being stamped with the cursor's
+block, so the stamp and the payload described different instants, and a clock that failed to read
+valued it at 1970, which is an empty 200. The cut is now the timestamp of `sync.last_block`, joined in the cursor read so both come
+from one snapshot, and `PositionQuery::cut` is required: the store no longer owns a clock. An
+`as_of` past that timestamp is a 400. `CONTRACT_VERSION` is `0.3.0`.
+
 ### One migrated schema per case, in one place
 
 Four harnesses had grown the same twenty lines — read `POSTGRES_URL`, drop and create a schema,

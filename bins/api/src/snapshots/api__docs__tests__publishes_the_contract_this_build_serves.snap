@@ -215,7 +215,7 @@ expression: document().await
             "description": "How current this payload is. Present on every page: amounts are\nper-block quantities, so a sync that differs from the previous page is\nthe signal that the indexer advanced mid-walk."
           },
           "valued_at": {
-            "description": "When every amount on this page was computed — one instant for the whole\npage, defaulting to now. Distinct from `sync.last_block`: the shares are\nas far as the indexer has folded, the amounts are those shares valued\nhere. The `as_of` query parameter that sets it is Unix seconds.",
+            "description": "When every amount on this page was computed — one instant for the whole\npage, defaulting to the timestamp of `sync.last_block`. Whole seconds, so\nthe default is as of that block's second rather than that block: a later\nblock in the same second is included. The `as_of` query parameter that\nsets it is Unix seconds.",
             "format": "date-time",
             "type": "string"
           }
@@ -358,7 +358,7 @@ expression: document().await
       "name": "MIT"
     },
     "title": "Aave v4 Positions API",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -423,7 +423,7 @@ expression: document().await
             }
           },
           {
-            "description": "Unix seconds to value the page at. Defaults to now — amounts accrue\nevery second and the chain emits nothing while they do, so naming the\ninstant is what makes a response reproducible. Echoed back as\n`valued_at`.",
+            "description": "Unix seconds to value the page at, no later than the timestamp of\n`sync.last_block`; `maximum` is only a check that this is not\nmilliseconds. Defaults to that timestamp. Amounts accrue every second\nand the chain emits nothing while they do, so naming the instant is\nwhat makes a response reproducible. Echoed back as `valued_at`.",
             "in": "query",
             "name": "as_of",
             "required": false,
@@ -454,7 +454,7 @@ expression: document().await
                 }
               }
             },
-            "description": "A malformed address, a limit outside its bounds, an unrecognised query parameter, or a cursor this service did not issue for this listing."
+            "description": "A malformed address, a limit outside its bounds, an unrecognised query parameter, an `as_of` later than the last indexed block, or a cursor this service did not issue for this listing."
           },
           "404": {
             "content": {
@@ -464,7 +464,7 @@ expression: document().await
                 }
               }
             },
-            "description": "This deployment has never indexed that chain, so it cannot answer for it. Also returned in the window between an indexer starting and recording its first block."
+            "description": "This deployment has never indexed that chain, so it cannot answer for it. Also returned in the window between an indexer starting and recording its first block, and, when `as_of` is not named, while the last indexed block's header is not yet recorded."
           },
           "500": {
             "content": {
@@ -486,7 +486,7 @@ expression: document().await
   },
   "tags": [
     {
-      "description": "Folded from the Spoke event stream, enriched from the Hub and the reserve registry. Balances are shares; `value` is what they are worth at the instant the page names. Every response carries the block it is true as of, and the two clocks beside it.",
+      "description": "Folded from the Spoke event stream, enriched from the Hub and the reserve registry. Balances are shares; `value` is what they are worth at the instant the page names, which defaults to the timestamp of the last indexed block that every response carries.",
       "name": "positions"
     }
   ]

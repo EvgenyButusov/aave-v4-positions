@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::Address;
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use crate::errors::ApiError;
 
@@ -64,10 +64,11 @@ pub(crate) struct QueryParameters {
     /// for the listing that issued it.
     cursor: Option<String>,
 
-    /// Unix seconds to value the page at. Defaults to now — amounts accrue
-    /// every second and the chain emits nothing while they do, so naming the
-    /// instant is what makes a response reproducible. Echoed back as
-    /// `valued_at`.
+    /// Unix seconds to value the page at, no later than the timestamp of
+    /// `sync.last_block`; `maximum` is only a check that this is not
+    /// milliseconds. Defaults to that timestamp. Amounts accrue every second
+    /// and the chain emits nothing while they do, so naming the instant is
+    /// what makes a response reproducible. Echoed back as `valued_at`.
     #[param(minimum = 1_774_277_159_u64, maximum = 4_102_444_800_u64)]
     as_of: Option<u64>,
 }
@@ -81,8 +82,8 @@ pub(crate) struct Listing {
     /// Still opaque: verifying it needs the scope, which needs the three
     /// fields above.
     pub(crate) cursor: Option<String>,
-    /// Unix seconds to read and value the page at. `None` is now.
-    pub(crate) as_of: Option<u64>,
+    /// `None` is the block timestamp of the last indexed block.
+    pub(crate) as_of: Option<UnixSeconds>,
 }
 
 impl Listing {
@@ -98,7 +99,9 @@ impl Listing {
             spoke: reading.optional_address("spoke"),
             limit: reading.bounded("limit", DEFAULT_LIMIT, 1, MAX_LIMIT),
             cursor: reading.cursor(),
-            as_of: reading.optional_bounded("as_of", GENESIS, MAX_AS_OF),
+            as_of: reading
+                .optional_bounded("as_of", GENESIS, MAX_AS_OF)
+                .map(UnixSeconds::new),
         };
 
         reading.finish()?;
@@ -340,7 +343,9 @@ mod tests {
     #[test]
     fn takes_an_as_of_and_refuses_one_that_is_obviously_milliseconds() {
         assert_eq!(
-            parse("as_of=1785000000").ok().map(|l| l.as_of),
+            parse("as_of=1785000000")
+                .ok()
+                .map(|l| l.as_of.map(UnixSeconds::get)),
             Some(Some(1_785_000_000))
         );
 
@@ -358,11 +363,15 @@ mod tests {
     #[test]
     fn takes_the_instant_at_either_end_of_its_range() {
         assert_eq!(
-            parse("as_of=1774277159").ok().map(|l| l.as_of),
+            parse("as_of=1774277159")
+                .ok()
+                .map(|l| l.as_of.map(UnixSeconds::get)),
             Some(Some(GENESIS))
         );
         assert_eq!(
-            parse("as_of=4102444800").ok().map(|l| l.as_of),
+            parse("as_of=4102444800")
+                .ok()
+                .map(|l| l.as_of.map(UnixSeconds::get)),
             Some(Some(MAX_AS_OF))
         );
     }

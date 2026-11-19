@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use time::OffsetDateTime;
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 /// How far the indexer has got on one chain, and how long ago it got there.
 ///
@@ -11,6 +11,10 @@ pub struct SyncStatus {
     pub chain_id: ChainId,
     pub last_block: u64,
     pub last_hash: B256,
+
+    /// `None` while the reorg window holds no header at `last_block`: a commit
+    /// replaces the window's top before the cursor follows it.
+    pub last_block_timestamp: Option<UnixSeconds>,
 
     /// Written by the database's clock.
     pub updated_at: OffsetDateTime,

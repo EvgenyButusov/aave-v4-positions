@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-use aave_positions::store::{Position, PositionAsset, PositionKey, PositionPage};
+use aave_positions::store::{Position, PositionAsset, PositionKey, PositionPage, PositionQuery};
 use aave_positions::valuation::Valuation;
 use alloy_primitives::{Address, I256, U256, uint};
 use axum::body::Body;
@@ -14,7 +14,7 @@ use indexing::SyncStatus;
 use prices::{ReserveKey, ReservePrice};
 use time::OffsetDateTime;
 use token_metadata::TokenLabel;
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use crate::positions::params::{DEFAULT_LIMIT, GENESIS, MAX_AS_OF, MAX_LIMIT};
 use crate::test_support::app::{Stores, VALUED_AT, get, synced};
@@ -109,7 +109,6 @@ async fn serves_the_whole_page_in_the_spelling_this_port_publishes() {
     let stores = Stores {
         page: PositionPage {
             items: vec![held()],
-            valued_at: VALUED_AT,
             next: None,
         },
         labels: labelled(),
@@ -174,7 +173,6 @@ async fn an_explicit_instant_skips_the_price_read_rather_than_discarding_it() {
     let stores = Stores {
         page: PositionPage {
             items: vec![held()],
-            valued_at: 1_780_000_000,
             next: None,
         },
         labels: labelled(),
@@ -209,7 +207,6 @@ async fn the_page_clock_is_the_oldest_price_behind_it_not_the_newest() {
     let stores = Stores {
         page: PositionPage {
             items: vec![held(), elsewhere],
-            valued_at: VALUED_AT,
             next: None,
         },
         labels: labelled(),
@@ -239,7 +236,6 @@ async fn writes_a_subsecond_at_whatever_width_it_takes_to_say_it() {
     let stores = Stores {
         page: PositionPage {
             items: vec![held()],
-            valued_at: VALUED_AT,
             next: None,
         },
         labels: labelled(),
@@ -269,7 +265,6 @@ async fn an_unresolved_reserve_nulls_the_asset_the_value_and_the_shares_together
     let stores = Stores {
         page: PositionPage {
             items: vec![unresolved],
-            valued_at: VALUED_AT,
             next: None,
         },
         ..Stores::default()
@@ -312,7 +307,6 @@ async fn a_hub_that_listed_the_asset_without_checkpointing_it_keeps_the_shares()
     let stores = Stores {
         page: PositionPage {
             items: vec![unvalued],
-            valued_at: VALUED_AT,
             next: None,
         },
         labels: labelled(),
@@ -336,7 +330,6 @@ async fn a_reserve_nobody_has_priced_nulls_the_dollars_and_keeps_the_tokens() {
     let stores = Stores {
         page: PositionPage {
             items: vec![held()],
-            valued_at: VALUED_AT,
             next: None,
         },
         labels: labelled(),
@@ -371,7 +364,6 @@ async fn a_token_with_no_label_and_one_with_no_symbol_both_serve_null() {
         let stores = Stores {
             page: PositionPage {
                 items: vec![held()],
-                valued_at: VALUED_AT,
                 next: None,
             },
             labels,
@@ -393,7 +385,6 @@ async fn takes_back_the_cursor_it_issued_and_only_for_the_listing_it_issued_it_f
     let stores = Stores {
         page: PositionPage {
             items: vec![held()],
-            valued_at: VALUED_AT,
             next: Some(PositionKey {
                 spoke: address(SPOKE),
                 reserve_id: U256::from(7),
@@ -564,4 +555,126 @@ mod the_deadline {
 
         assert_eq!(status, StatusCode::OK);
     }
+}
+
+/// 2026-07-25T17:22:03Z, two minutes after [`VALUED_AT`].
+const LATER_HEAD: u64 = 1_785_000_123;
+
+fn headed(timestamp: Option<u64>) -> Stores {
+    Stores {
+        sync: Some(SyncStatus {
+            last_block_timestamp: timestamp.map(UnixSeconds::new),
+            ..synced()
+        }),
+        ..Stores::default()
+    }
+}
+
+#[tokio::test]
+async fn values_the_page_at_the_block_timestamp_of_the_indexed_head() {
+    let stores = headed(Some(LATER_HEAD));
+    let queries = stores.queries.clone();
+
+    let (status, body) = answer(stores, "").await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains(r#""valued_at":"2026-07-25T17:22:03Z""#),
+        "{body}"
+    );
+    assert_eq!(queries.lock().unwrap()[0].cut, UnixSeconds::new(LATER_HEAD));
+}
+
+#[tokio::test]
+async fn hands_the_store_every_parameter_it_parsed() {
+    let issuing = Stores {
+        page: PositionPage {
+            items: vec![held()],
+            next: Some(PositionKey {
+                spoke: address(SPOKE),
+                reserve_id: U256::from(7),
+            }),
+        },
+        ..Stores::default()
+    };
+    let (_, body) = answer(issuing, &format!("?spoke={SPOKE}")).await;
+    let page: serde_json::Value = serde_json::from_str(&body).expect("a JSON body");
+    let cursor = page["next_cursor"].as_str().expect("a cursor").to_owned();
+
+    let stores = Stores::default();
+    let queries = stores.queries.clone();
+    let (status, body) = answer(
+        stores,
+        &format!("?spoke={SPOKE}&limit=3&cursor={cursor}&as_of=1780000000"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        *queries.lock().unwrap(),
+        [PositionQuery {
+            chain_id: ChainId::known(1),
+            user: address(ALICE),
+            spoke: Some(address(SPOKE)),
+            limit: 3,
+            after: Some(PositionKey {
+                spoke: address(SPOKE),
+                reserve_id: U256::from(7),
+            }),
+            cut: UnixSeconds::new(1_780_000_000),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn refuses_an_instant_the_fold_has_not_reached_yet() {
+    let (status, body) = answer(Stores::default(), &format!("?as_of={}", VALUED_AT + 1)).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        concat!(
+            r#"{"message":"as_of must be at most 1785000000, the timestamp of block 25652535, "#,
+            r#"the last indexed","error":"Bad Request","status_code":400}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn takes_the_anchor_itself() {
+    let (status, body) = answer(Stores::default(), &format!("?as_of={VALUED_AT}")).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn refuses_a_default_page_when_the_window_has_no_header_for_that_height() {
+    let stores = headed(None);
+    let queries = stores.queries.clone();
+
+    let (status, body) = answer(stores, "").await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        body,
+        concat!(
+            r#"{"message":"chain 1 has no header recorded for block 25652535, the last indexed; "#,
+            r#"name an as_of","error":"Not Found","status_code":404}"#
+        )
+    );
+    assert!(
+        queries.lock().unwrap().is_empty(),
+        "the store was asked anyway"
+    );
+}
+
+#[tokio::test]
+async fn serves_a_named_instant_while_the_window_has_no_header() {
+    let (status, body) = answer(headed(None), "?as_of=1780000000").await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains(r#""valued_at":"2026-05-28T20:26:40Z""#),
+        "{body}"
+    );
 }

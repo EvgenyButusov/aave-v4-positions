@@ -7,9 +7,11 @@
 
 use postgres::{Bigint, Pool, connection};
 use test_db::Scratch;
+use units::ChainId;
 
 use super::{PostgresCursorStore, PostgresSyncStatusStore};
 use crate::cursor::conformance::{Advanced, CursorHarness, Harness};
+use crate::fixtures::hash_of;
 
 pub(crate) struct PostgresHarness {
     pool: Pool,
@@ -89,6 +91,26 @@ impl Harness for PostgresHarness {
                 .await
                 .unwrap();
         }
+    }
+
+    async fn given_header(&self, chain_id: ChainId, block_number: u64, timestamp: u64) {
+        connection(&self.pool)
+            .await
+            .unwrap()
+            .execute(
+                "INSERT INTO indexer_block_headers \
+                 (chain_id, block_number, hash, parent_hash, block_timestamp) \
+                 VALUES ($1, $2, $3, $4, $5)",
+                &[
+                    &Bigint(chain_id.into()),
+                    &Bigint(block_number),
+                    &hash_of(0, block_number).to_string(),
+                    &hash_of(0, block_number.saturating_sub(1)).to_string(),
+                    &Bigint(timestamp),
+                ],
+            )
+            .await
+            .unwrap();
     }
 }
 

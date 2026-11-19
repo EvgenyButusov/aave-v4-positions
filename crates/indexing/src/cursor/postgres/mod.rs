@@ -1,8 +1,8 @@
 //! The Postgres implementations of this module's two ports.
 //!
 //! One table, two adapters: the loop writes it through
-//! [`CursorStore`](super::CursorStore) and the read API reads it through
-//! [`SyncStatusStore`](super::SyncStatusStore).
+//! [`CursorStore`](super::CursorStore) and the read API reads it, with the
+//! header at its height, through [`SyncStatusStore`](super::SyncStatusStore).
 
 mod cursor_store;
 #[cfg(test)]

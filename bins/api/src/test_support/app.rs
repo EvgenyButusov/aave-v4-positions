@@ -9,7 +9,7 @@
 //! readiness probe.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -28,7 +28,7 @@ use prices::{Error as PriceError, ReserveKey, ReservePrice, ReservePriceStore};
 use time::OffsetDateTime;
 use token_metadata::{Error as LabelError, TokenLabel, TokenMetadataStore};
 use tower::ServiceExt;
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use crate::app::{self as app, App};
 use crate::config::Staleness;
@@ -106,6 +106,9 @@ pub(crate) struct Stores {
     /// the port-1 pool cannot express: that is a dependency which is *down*.
     pub(crate) positions_hang: bool,
 
+    /// Every query the position store was handed, in order.
+    pub(crate) queries: Arc<Mutex<Vec<PositionQuery>>>,
+
     /// How many times the price store was asked; the point is the answer `0`,
     /// because an explicit `as_of` skips the read rather than discarding it.
     pub(crate) price_reads: Arc<AtomicUsize>,
@@ -117,7 +120,6 @@ impl Default for Stores {
             sync: Some(synced()),
             page: PositionPage {
                 items: Vec::new(),
-                valued_at: VALUED_AT,
                 next: None,
             },
             labels: HashMap::new(),
@@ -125,6 +127,7 @@ impl Default for Stores {
             staleness: STALENESS,
             request_timeout: PATIENT,
             positions_hang: false,
+            queries: Arc::new(Mutex::new(Vec::new())),
             price_reads: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -144,6 +147,7 @@ pub(crate) fn synced() -> SyncStatus {
         last_hash: format!("0x{}", "ab".repeat(32))
             .parse::<B256>()
             .expect("a literal hash"),
+        last_block_timestamp: Some(UnixSeconds::new(VALUED_AT)),
         updated_at: OffsetDateTime::from_unix_timestamp(1_785_000_071)
             .expect("a representable instant"),
         age_seconds: 7,
@@ -159,6 +163,7 @@ impl Stores {
             positions: Box::new(Positions {
                 page: self.page,
                 hang: self.positions_hang,
+                queries: Arc::clone(&self.queries),
             }),
             tokens: Box::new(Labels(self.labels)),
             prices: Box::new(Prices {
@@ -183,11 +188,16 @@ impl Stores {
 struct Positions {
     page: PositionPage,
     hang: bool,
+    queries: Arc<Mutex<Vec<PositionQuery>>>,
 }
 
 #[async_trait::async_trait]
 impl PositionStore for Positions {
-    async fn list(&self, _query: &PositionQuery) -> Result<PositionPage, StoreError> {
+    async fn list(&self, query: &PositionQuery) -> Result<PositionPage, StoreError> {
+        self.queries
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .push(query.clone());
         if self.hang {
             std::future::pending::<()>().await;
         }

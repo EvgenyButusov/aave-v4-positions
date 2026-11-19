@@ -7,7 +7,7 @@
 use postgres::{Bigint, Pool, TracedPool};
 use time::OffsetDateTime;
 use tokio_postgres::Row;
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use crate::cursor::{Error, SyncStatus, SyncStatusStore};
 
@@ -17,14 +17,20 @@ use crate::cursor::{Error, SyncStatus, SyncStatusStore};
 /// stale. Floored to whole seconds: `EXTRACT` returns microseconds, and six
 /// decimal places on a figure compared against a threshold in tens of seconds
 /// is precision nobody can use and everybody has to read.
+///
+/// The header is joined rather than read separately, so the timestamp is the
+/// one at the height this row names, in the same snapshot.
 const STATUS: &str = "\
     SELECT \
-        last_block, \
-        last_hash, \
-        updated_at, \
-        floor(EXTRACT(EPOCH FROM (now() - updated_at)))::bigint AS age_seconds \
-    FROM indexer_cursor \
-    WHERE chain_id = $1 \
+        c.last_block, \
+        c.last_hash, \
+        h.block_timestamp AS last_block_timestamp, \
+        c.updated_at, \
+        floor(EXTRACT(EPOCH FROM (now() - c.updated_at)))::bigint AS age_seconds \
+    FROM indexer_cursor c \
+    LEFT JOIN indexer_block_headers h \
+        ON h.chain_id = c.chain_id AND h.block_number = c.last_block \
+    WHERE c.chain_id = $1 \
     LIMIT 1";
 
 pub struct PostgresSyncStatusStore {
@@ -57,6 +63,7 @@ fn status(chain_id: ChainId, row: &Row) -> Result<SyncStatus, Error> {
     let last_hash: &str = row.get("last_hash");
     let last_block: i64 = row.get("last_block");
     let age_seconds: i64 = row.get("age_seconds");
+    let last_block_timestamp: Option<i64> = row.get("last_block_timestamp");
 
     Ok(SyncStatus {
         // The argument, not the column. `WHERE chain_id = $1` matched it, so
@@ -76,6 +83,17 @@ fn status(chain_id: ChainId, row: &Row) -> Result<SyncStatus, Error> {
             expected: "32-byte hash",
             value: last_hash.to_owned(),
         })?,
+        last_block_timestamp: last_block_timestamp
+            .map(|seconds| {
+                u64::try_from(seconds)
+                    .map(UnixSeconds::new)
+                    .map_err(|_| Error::Malformed {
+                        column: "block_timestamp",
+                        expected: "non-negative",
+                        value: seconds.to_string(),
+                    })
+            })
+            .transpose()?,
         updated_at: row.get::<_, OffsetDateTime>("updated_at"),
         // Clamped rather than refused, and the only one of these that is.
         // Negative means the row was written by a clock ahead of the one
@@ -109,5 +127,9 @@ mod tests {
         reads_only_the_chain_it_was_asked_about,
         ages_the_row_by_the_database_clock,
         reads_a_block_height_past_what_a_double_can_hold,
+        reads_the_block_timestamp_of_the_indexed_head,
+        has_no_timestamp_while_the_window_lacks_the_head,
+        takes_the_header_at_the_head_and_not_the_highest,
+        takes_the_header_of_its_own_chain,
     }
 }

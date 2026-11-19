@@ -1550,12 +1550,11 @@ A zero there would be indistinguishable from a real zero balance.
 replaced by it: one is cost basis, the other is current worth, and the difference
 between them is interest.
 
-**Every page carries the instant it was valued at.** `asOf` defaults to now,
-which is the same choice the chain makes — `getUserDebt` at `latest` is stored
-shares times an index extrapolated to the head block. Naming it is what makes a
-response reproducible and what lets reconciliation pin both sides to one block.
-The shares are as of whatever the indexer has folded, which is a different clock;
-reporting `valuedAt` keeps the two from being silently conflated.
+**Every page carries the instant it was valued at.** `as_of` defaults to the
+timestamp of the last indexed block, which is the choice the chain makes at that
+block — `getUserDebt` there is stored shares times an index extrapolated to its
+timestamp. Naming it is what makes a response reproducible and what lets
+reconciliation pin both sides to one block.
 
 **Two `LEFT JOIN`s, where the collateral flag got a `UNION ALL`** — and the two
 cases differ structurally rather than by preference. `UNION ALL` earns its place
@@ -1624,9 +1623,14 @@ worth wrong in the one direction that matters, so anything aggregated has to be 
 prices below. `sync` says how far the indexer has folded; `valued_at`
 says when the amounts were computed. Conflating them would be easy and wrong — shares advance when
 events land, amounts advance every second whether or not anything happened. `as_of` sets the second
-one and defaults to now, which is the same choice the chain makes; passing it explicitly is what
-makes two identical requests return identical numbers. It is bounded at both ends as a **units
-check**: below the Spoke's genesis nothing exists to value, and above 2100 the caller sent
+one and defaults to the timestamp of `sync.last_block`, read in the same statement as the cursor, so
+a default page and the `sync` stamped on it describe one block. Passing it explicitly is what makes
+two identical requests return identical numbers, and it may not be later than that timestamp: the
+fold has not reached it. When the reorg window holds no header at `sync.last_block` — between a
+commit that replaces its top and the cursor following it — a default request answers 404 rather
+than a page cut by a clock; a named one is still served. The cut is whole seconds, so a default page
+is as of that block's second, and a later block in the same second is included. Its static bounds
+are a **units check**: below the Spoke's genesis nothing exists to value, and above 2100 the caller sent
 milliseconds — unbounded, that would extrapolate the interest index tens of thousands of years and
 return a page of enormous numbers with nothing to say they are wrong.
 

@@ -5,7 +5,7 @@
 //! [`CursorStore`] writes, so [`CursorHarness`] supplies only a store.
 
 use alloy_primitives::{B256, b256};
-use units::ChainId;
+use units::{ChainId, UnixSeconds};
 
 use crate::cursor::{Cursor, CursorStore, SyncStatus, SyncStatusStore};
 use crate::fixtures::{CHAIN_ID, OTHER_CHAIN, hash_of};
@@ -48,6 +48,8 @@ pub(crate) trait Harness {
     fn store(&self) -> &Self::Store;
 
     async fn given_cursor(&self, rows: &[Advanced]);
+
+    async fn given_header(&self, chain_id: ChainId, block_number: u64, timestamp: u64);
 }
 
 async fn status_of<H: Harness>(harness: &H) -> Option<SyncStatus> {
@@ -110,6 +112,53 @@ pub(crate) async fn reads_a_block_height_past_what_a_double_can_hold<H: Harness>
     harness.given_cursor(&[Advanced::to(CHAIN_ID, HIGH)]).await;
 
     assert_eq!(status_of(&harness).await.expect("indexed").last_block, HIGH);
+}
+
+async fn timestamp_of<H: Harness>(harness: &H) -> Option<UnixSeconds> {
+    status_of(harness)
+        .await
+        .expect("indexed")
+        .last_block_timestamp
+}
+
+pub(crate) async fn reads_the_block_timestamp_of_the_indexed_head<H: Harness>() {
+    let harness = H::fresh("reads_the_block_timestamp_of_the_indexed_head").await;
+    harness.given_cursor(&[Advanced::to(CHAIN_ID, 100)]).await;
+    harness.given_header(CHAIN_ID, 100, 1_785_000_100).await;
+
+    assert_eq!(
+        timestamp_of(&harness).await,
+        Some(UnixSeconds::new(1_785_000_100))
+    );
+}
+
+pub(crate) async fn has_no_timestamp_while_the_window_lacks_the_head<H: Harness>() {
+    let harness = H::fresh("has_no_timestamp_while_the_window_lacks_the_head").await;
+    harness.given_cursor(&[Advanced::to(CHAIN_ID, 100)]).await;
+    harness.given_header(CHAIN_ID, 99, 1_785_000_099).await;
+
+    assert_eq!(timestamp_of(&harness).await, None);
+}
+
+pub(crate) async fn takes_the_header_at_the_head_and_not_the_highest<H: Harness>() {
+    // The window runs ahead of the cursor between a commit and its save.
+    let harness = H::fresh("takes_the_header_at_the_head_and_not_the_highest").await;
+    harness.given_cursor(&[Advanced::to(CHAIN_ID, 100)]).await;
+    harness.given_header(CHAIN_ID, 100, 1_785_000_100).await;
+    harness.given_header(CHAIN_ID, 101, 1_785_000_112).await;
+
+    assert_eq!(
+        timestamp_of(&harness).await,
+        Some(UnixSeconds::new(1_785_000_100))
+    );
+}
+
+pub(crate) async fn takes_the_header_of_its_own_chain<H: Harness>() {
+    let harness = H::fresh("takes_the_header_of_its_own_chain").await;
+    harness.given_cursor(&[Advanced::to(CHAIN_ID, 100)]).await;
+    harness.given_header(OTHER_CHAIN, 100, 1_785_000_100).await;
+
+    assert_eq!(timestamp_of(&harness).await, None);
 }
 
 pub(crate) trait CursorHarness {

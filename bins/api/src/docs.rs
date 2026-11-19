@@ -1,4 +1,4 @@
-//! Where the contract is published: the viewer at `API_DOCS_PATH`, and the
+//! Where the contract is published: the viewer at `DOCS_PATH`, and the
 //! document as JSON and as YAML beneath it.
 //!
 //! The viewer's files are on disk rather than in the binary, because

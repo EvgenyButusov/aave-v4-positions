@@ -18,8 +18,9 @@
 
 set -euo pipefail
 
-# The chain-facing half of alloy. `bins/indexer` is the one binary that will
-# link these, and it joins the list below in Phase 3.
+# The chain-facing half of alloy. `bins/indexer` is the one binary that may
+# link these, so it has no `forbid` line: serving nothing beyond its probes is
+# not a crate list.
 readonly CHAIN=(alloy-provider alloy-transport-http alloy-rpc-client alloy-pubsub)
 
 bad=0

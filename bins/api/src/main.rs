@@ -67,9 +67,8 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let postgres = postgres::build_pool(&config.postgres_url, config.postgres_limits)?;
     let probes = probes::dependencies(
         clickhouse.clone(),
-        &config.postgres_url,
-        config.postgres_limits,
-    )?;
+        postgres::probe_pool(&config.postgres_url, config.postgres_limits)?,
+    );
 
     let shutdown = ShutdownFlag::new();
 

@@ -6,49 +6,17 @@
 
 use axum::Router;
 use clickhouse_client::clickhouse::Client;
-use postgres::{Limits, Pool};
+use postgres::ProbePool;
 
 use crate::app::AppState;
 
 /// What readiness connects with, which is never what requests connect with.
 pub(crate) struct Dependencies {
     clickhouse: Client,
-    postgres: Pool,
+    postgres: ProbePool,
 }
 
-/// A pool of its own, so request traffic cannot starve the probe.
-///
-/// `max_size: 1`, not a share of the request pool and not
-/// `Timeouts::wait_millis(0)` — deadpool turns a zero wait into a non-blocking
-/// `try_acquire` and would report a busy pool as a down database. Two probes in
-/// flight at once means the last ping did not return inside the orchestrator's
-/// period, which is itself not-ready.
-///
-/// # Errors
-///
-/// Whatever [`postgres::build_pool`] refuses the URL for.
-pub(crate) fn dependencies(
-    clickhouse: Client,
-    postgres_url: &str,
-    limits: Limits,
-) -> Result<Dependencies, postgres::Error> {
-    Ok(from_pool(
-        clickhouse,
-        postgres::build_pool(
-            postgres_url,
-            Limits {
-                max_size: 1,
-                ..limits
-            },
-        )?,
-    ))
-}
-
-/// Builds the capability checks over connections reserved for readiness.
-///
-/// Kept as a separate seam because the tests deliberately pass an exhausted
-/// request pool to prove why production constructs a dedicated one.
-pub(crate) fn from_pool(clickhouse: Client, postgres: Pool) -> Dependencies {
+pub(crate) fn dependencies(clickhouse: Client, postgres: ProbePool) -> Dependencies {
     Dependencies {
         clickhouse,
         postgres,
@@ -86,7 +54,7 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use postgres::Limits;
 
-    use super::{Dependencies, dependencies, from_pool};
+    use super::{Dependencies, dependencies};
     use crate::app::{self as app, App};
     use crate::test_support::app::{
         clickhouse, get, handler, postgres, postgres_url, state, unreachable_postgres,
@@ -122,16 +90,8 @@ mod tests {
             held.push(::postgres::connection(&requests).await.unwrap());
         }
 
-        // Which is what the probe did before it had a pool of its own.
-        let (status, body) = probe(from_pool(clickhouse(), requests.clone())).await;
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(
-            body.contains(r#"{"name":"postgres","status":"down","error":"could not connect"#),
-            "{body}"
-        );
-
-        let (status, _) = probe(dependencies(clickhouse(), &postgres_url(), limits).unwrap()).await;
-        assert_eq!(status, StatusCode::OK);
+        let (status, body) = probe(dependencies(clickhouse(), postgres())).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 
     async fn probe(probes: Dependencies) -> (StatusCode, String) {

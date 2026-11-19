@@ -43,7 +43,7 @@ pub(crate) struct Config {
 /// How old a number may be before a page says so.
 ///
 /// Two rather than one, because the indexer advances every block and the oracle
-/// is read every minute. Neither is the indexer's `INDEXER_STALL_THRESHOLD_MS`.
+/// is read every minute. Neither is the indexer's `STALL_THRESHOLD_MS`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Staleness {
     pub(crate) sync: u64,
@@ -61,27 +61,27 @@ impl Config {
     ///
     /// [`Invalid`], naming the first variable that could not be read.
     pub(crate) fn from_env() -> Result<Self, Invalid> {
-        Self::parse(&Source::from_env().read())
+        Self::parse(&Source::from_env().read(env!("CARGO_MANIFEST_DIR")))
     }
 
     fn parse(env: &Env) -> Result<Self, Invalid> {
         Ok(Self {
             telemetry: telemetry::Settings::read(env)?,
-            host: env.address("API_HOST", "0.0.0.0")?,
-            port: env.port("API_PORT", 3000)?,
+            host: env.address("HOST", "0.0.0.0")?,
+            port: env.port("PORT", 3000)?,
             grace: Duration::from_secs(env.seconds("SHUTDOWN_GRACE_SECONDS", 10, 300)?),
-            prefix: env.text("API_GLOBAL_PREFIX", "api"),
-            docs_path: env.text("API_DOCS_PATH", "docs"),
-            docs_assets: env.text("API_DOCS_ASSETS", "/usr/share/api/docs"),
+            prefix: env.text("GLOBAL_PREFIX", "api"),
+            docs_path: env.text("DOCS_PATH", "docs"),
+            docs_assets: env.text("DOCS_ASSETS", "/usr/share/api/docs"),
             cursor_secret: env.secret("POSITIONS_CURSOR_SECRET", MIN_SECRET_BYTES)?,
             staleness: Staleness {
-                sync: env.seconds("API_SYNC_STALE_AFTER_SECONDS", 60, MAX_STALENESS_SECONDS)?,
-                price: env.seconds("API_PRICE_STALE_AFTER_SECONDS", 300, MAX_STALENESS_SECONDS)?,
+                sync: env.seconds("SYNC_STALE_AFTER_SECONDS", 60, MAX_STALENESS_SECONDS)?,
+                price: env.seconds("PRICE_STALE_AFTER_SECONDS", 300, MAX_STALENESS_SECONDS)?,
             },
             clickhouse: clickhouse_client::Config::read(env)?,
             postgres_url: postgres::read_url(env)?,
             postgres_limits: postgres::Limits::read(env)?,
-            request_timeout: env.deadline("API_REQUEST_TIMEOUT_MS", Duration::from_secs(10))?,
+            request_timeout: env.deadline("REQUEST_TIMEOUT_MS", Duration::from_secs(10))?,
         })
     }
 }
@@ -147,13 +147,13 @@ mod tests {
     fn the_first_bad_variable_in_reading_order_is_the_one_reported() {
         // Fields evaluate in source order, so this pins the order a deployment
         // reads its refusals in. Both are wrong; the one named is read first.
-        let refusal = configured(&[("API_PORT", "0"), ("SHUTDOWN_GRACE_SECONDS", "600")])
+        let refusal = configured(&[("PORT", "0"), ("SHUTDOWN_GRACE_SECONDS", "600")])
             .err()
             .expect("expected a refusal")
             .to_string();
 
         assert!(
-            refusal.ends_with("API_PORT: must be 1..=65535, got \"0\""),
+            refusal.ends_with("PORT: must be 1..=65535, got \"0\""),
             "{refusal}"
         );
     }
@@ -162,14 +162,14 @@ mod tests {
     fn bounds_a_staleness_threshold_without_pretending_to_check_its_units() {
         // Both halves: the price default in milliseconds is refused, the sync
         // default in milliseconds is taken and just as wrong.
-        let refusal = configured(&[("API_PRICE_STALE_AFTER_SECONDS", "300000")])
+        let refusal = configured(&[("PRICE_STALE_AFTER_SECONDS", "300000")])
             .err()
             .expect("expected a refusal")
             .to_string();
 
         assert!(refusal.contains("must be 0..=86400"), "{refusal}");
 
-        let taken = configured(&[("API_SYNC_STALE_AFTER_SECONDS", "60000")])
+        let taken = configured(&[("SYNC_STALE_AFTER_SECONDS", "60000")])
             .expect("under a day, and still wrong");
 
         assert_eq!(taken.staleness.sync, 60_000);
@@ -178,15 +178,15 @@ mod tests {
     #[test]
     fn reads_every_variable_it_declares_and_one_from_each_group() {
         let config = configured(&[
-            ("API_HOST", "127.0.0.1"),
-            ("API_PORT", "8080"),
+            ("HOST", "127.0.0.1"),
+            ("PORT", "8080"),
             ("SHUTDOWN_GRACE_SECONDS", "5"),
-            ("API_GLOBAL_PREFIX", "gateway"),
-            ("API_DOCS_PATH", "reference"),
-            ("API_DOCS_ASSETS", "/srv/docs"),
-            ("API_SYNC_STALE_AFTER_SECONDS", "30"),
-            ("API_PRICE_STALE_AFTER_SECONDS", "900"),
-            ("API_REQUEST_TIMEOUT_MS", "2500"),
+            ("GLOBAL_PREFIX", "gateway"),
+            ("DOCS_PATH", "reference"),
+            ("DOCS_ASSETS", "/srv/docs"),
+            ("SYNC_STALE_AFTER_SECONDS", "30"),
+            ("PRICE_STALE_AFTER_SECONDS", "900"),
+            ("REQUEST_TIMEOUT_MS", "2500"),
             ("LOG_LEVEL", "debug"),
             ("CLICKHOUSE_DATABASE", "aave"),
             ("POSTGRES_URL", "postgres://aave@postgres:5432/aave"),

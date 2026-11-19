@@ -10,7 +10,7 @@ use axum::http::{Method, Uri};
 use crate::errors::ApiError;
 
 /// Where the versioned routes hang, given whatever a deployment wrote in
-/// `API_GLOBAL_PREFIX`. Slashes are trimmed, and an empty prefix is one asking
+/// `GLOBAL_PREFIX`. Slashes are trimmed, and an empty prefix is one asking
 /// for none — so `/v1` rather than `//v1`.
 pub(crate) fn mount(prefix: &str) -> String {
     match prefix.trim_matches('/') {
@@ -20,7 +20,7 @@ pub(crate) fn mount(prefix: &str) -> String {
 }
 
 /// Where the document hangs, given whatever a deployment wrote in
-/// `API_DOCS_PATH`. Trimmed as in [`mount`].
+/// `DOCS_PATH`. Trimmed as in [`mount`].
 ///
 /// Outside the prefix and unversioned, like the probes.
 pub(crate) fn docs(path: &str) -> String {

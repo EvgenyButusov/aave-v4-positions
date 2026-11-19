@@ -454,6 +454,13 @@ overrides what it needs differently — `migrate` keeps its ten-minute execution
 written a third time in `bins/indexer`; one reader means a variable cannot be renamed in two of
 three places.
 
+**A binary's variables carry no prefix of its name.** Each reads only the `.env` beside its
+`Cargo.toml`, found from `CARGO_MANIFEST_DIR` rather than the working directory, so `bins/api` and
+`bins/indexer` both read `PORT` without colliding. The shared groups are repeated in each file rather
+than layered from a root one, so a file is the whole of what its binary reads. A deployment injects each process's environment separately and reads no file at all. The
+Rust indexer's names therefore stop matching the Node indexer's `INDEXER_*`; its deployment's
+variables are renamed at its cutover, not before.
+
 ### `chain_id` is 64 bits, in one place
 
 Every Postgres table has always declared `chain_id bigint`, with the reason written on the column:
@@ -508,9 +515,9 @@ Postgres half of that binary. A deployment outside Compose must preserve the sam
 the API at an empty or wrong database is a configuration failure to reject in that gate or at
 startup, not a transient condition to rediscover every ten seconds.
 
-Readiness connects through a pool of its own, `max_size: 1`. Holding every connection of a
-request-sized pool and then probing through it answers 503; probing through the separate pool
-answers 200, in the same case. Not `Timeouts::wait_millis(0)`, which deadpool turns into a
+Readiness connects through a pool of its own, `max_size: 1`: `postgres::ProbePool`, the only pool
+`ping` takes, so the pool that serves requests or writes cannot be handed to readiness at all.
+Holding every connection of a request-sized pool still leaves the probe answering 200. Not `Timeouts::wait_millis(0)`, which deadpool turns into a
 non-blocking `try_acquire` and which reports a busy pool as a down database.
 
 Its body now carries the error's own message and nothing under it. `error_message_with_causes`
@@ -1084,6 +1091,21 @@ and each of these would show up in it as a difference to explain away:
 
 Each carries a one-line comment naming it as ported-as-is. They are fixed after cutover, against a
 codebase already proven identical to the one it replaced.
+
+**Landed.** [#64](https://github.com/EugeneButusov/aave-v4-positions/pull/64) the ports and the two
+Postgres stores, [#65](https://github.com/EugeneButusov/aave-v4-positions/pull/65) the detector,
+[#66](https://github.com/EugeneButusov/aave-v4-positions/pull/66) the loop, then `bins/indexer`. The
+binary parses the set the TypeScript validates, minus the oracle, enrichment and price variables,
+which arrive with their consumers in Phase 4. It serves `/health/live` and `/health/ready`, whose
+three rows are `indexer`, `clickhouse` and `postgres` in that order. It does not construct the loop:
+with no chain client to give it, the status stays `starting` and the stall check answers `up`, which
+is what a TypeScript pod with `INDEXER_AUTOSTART=false` reports. Every chain variable is validated
+at boot and logged once, the providers by count, so 3b wires values that have already been refused
+when wrong. One bound is new: `STALL_THRESHOLD_MS` gains a one-day ceiling, where the
+TypeScript had none.
+
+What 3b still owes 3a is the part nothing here can prove: that the loop's ordering survives a real
+provider's error taxonomy, and the differential gate below.
 
 #### Phase 3b — the chain, and Aave ingestion
 

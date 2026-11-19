@@ -118,8 +118,8 @@ services:
       # pretty — turning it on here would change what a deployment emits.
       LOG_PRETTY: 'false'
       SHUTDOWN_GRACE_SECONDS: '5'
-      API_HOST: 0.0.0.0
-      API_PORT: '3000'
+      HOST: 0.0.0.0
+      PORT: '3000'
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_ALLOW_INSECURE_HTTP: 'true'
       CLICKHOUSE_DATABASE: aave
@@ -130,8 +130,8 @@ services:
       # any deployment — a shared key is not a signature — and set the SAME one
       # on every replica.
       POSITIONS_CURSOR_SECRET: ${POSITIONS_CURSOR_SECRET:-local-development-cursor-secret-0000}
-      API_SYNC_STALE_AFTER_SECONDS: '60'
-      API_PRICE_STALE_AFTER_SECONDS: '300'
+      SYNC_STALE_AFTER_SECONDS: '60'
+      PRICE_STALE_AFTER_SECONDS: '300'
       # Read through this service's own config, not by an SDK ahead of it: the
       # binary parses one environment and hands telemetry down from it.
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}

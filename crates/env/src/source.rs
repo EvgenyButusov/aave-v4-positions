@@ -7,6 +7,7 @@
 //! binary does both.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::Env;
 
@@ -17,8 +18,9 @@ pub enum Source {
     /// The process environment alone, which is what a deployment injects. A
     /// `.env` sitting on disk is not consulted.
     Process,
-    /// The process environment, with a `.env` filling in what it leaves out and
-    /// never replacing it — so the file is a default, not an override.
+    /// The process environment, with the binary's `.env` filling in what it
+    /// leaves out and never replacing it — so the file is a default, not an
+    /// override.
     ProcessAndFile,
 }
 
@@ -35,18 +37,16 @@ impl Source {
     }
 
     /// Every variable this process can see, by whichever route it allows.
+    ///
+    /// `crate_dir` is the binary's `CARGO_MANIFEST_DIR`, and the file is the
+    /// `.env` in it: found from the build rather than the working directory.
     #[must_use]
-    pub fn read(self) -> Env {
+    pub fn read(self, crate_dir: &str) -> Env {
         let process = std::env::vars().collect();
 
         let vars = match self {
             Self::Process => process,
-            // The usual error is that there is no file. A malformed one is
-            // silent too, which is a local problem with a local symptom.
-            Self::ProcessAndFile => match dotenvy::dotenv_iter() {
-                Ok(file) => merge(process, file.flatten()),
-                Err(_) => process,
-            },
+            Self::ProcessAndFile => fill(process, Path::new(crate_dir)),
         };
 
         vars.into_iter().collect()
@@ -61,6 +61,15 @@ impl Source {
             Some("production" | "test") => Self::Process,
             _ => Self::ProcessAndFile,
         }
+    }
+}
+
+fn fill(vars: HashMap<String, String>, crate_dir: &Path) -> HashMap<String, String> {
+    // The usual error is that there is no file. A malformed one is silent too,
+    // which is a local problem with a local symptom.
+    match dotenvy::from_path_iter(crate_dir.join(".env")) {
+        Ok(pairs) => merge(vars, pairs.flatten()),
+        Err(_) => vars,
     }
 }
 
@@ -92,22 +101,56 @@ mod tests {
         // Why `merge` inserts rather than extends: an injected variable is
         // never replaced by a file that reached the image.
         let merged = merge(
-            pairs(&[("API_PORT", "3000")]),
-            pairs(&[("API_PORT", "9999")]).into_iter(),
+            pairs(&[("PORT", "3000")]),
+            pairs(&[("PORT", "9999")]).into_iter(),
         );
 
-        assert_eq!(merged["API_PORT"], "3000");
+        assert_eq!(merged["PORT"], "3000");
     }
 
     #[test]
     fn the_file_fills_only_what_the_process_left_out() {
         let merged = merge(
-            pairs(&[("API_PORT", "3000")]),
-            pairs(&[("API_PORT", "9999"), ("LOG_LEVEL", "debug")]).into_iter(),
+            pairs(&[("PORT", "3000")]),
+            pairs(&[("PORT", "9999"), ("LOG_LEVEL", "debug")]).into_iter(),
         );
 
-        assert_eq!(merged["API_PORT"], "3000");
+        assert_eq!(merged["PORT"], "3000");
         assert_eq!(merged["LOG_LEVEL"], "debug", "the gap was not filled");
+    }
+
+    /// A workspace in the temporary directory, with a `.env` at its root and
+    /// `own` beside the binary's manifest.
+    fn workspace(name: &str, root: &str, own: &str) -> std::path::PathBuf {
+        let workspace = std::env::temp_dir().join(format!("env-{}-{name}", std::process::id()));
+        let crate_dir = workspace.join("bins").join("bin");
+        std::fs::create_dir_all(&crate_dir).unwrap();
+        std::fs::write(workspace.join(".env"), root).unwrap();
+        std::fs::write(crate_dir.join(".env"), own).unwrap();
+        crate_dir
+    }
+
+    #[test]
+    fn reads_the_file_beside_the_binarys_manifest() {
+        let crate_dir = workspace("own", "", "PORT=3101\n");
+
+        assert_eq!(fill(HashMap::new(), &crate_dir)["PORT"], "3101");
+    }
+
+    #[test]
+    fn a_deployments_variables_beat_the_binarys_file() {
+        let crate_dir = workspace("process", "", "PORT=3101\n");
+
+        let filled = fill(pairs(&[("PORT", "3000")]), &crate_dir);
+
+        assert_eq!(filled["PORT"], "3000");
+    }
+
+    #[test]
+    fn a_file_above_the_binary_is_not_read() {
+        let crate_dir = workspace("above", "RPC_URLS=https://stale.example\n", "PORT=3101\n");
+
+        assert!(!fill(HashMap::new(), &crate_dir).contains_key("RPC_URLS"));
     }
 
     #[test]

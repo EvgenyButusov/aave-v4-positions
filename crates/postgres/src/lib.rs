@@ -3,7 +3,8 @@
 //! Connectivity, for the reason `clickhouse-client` gives, the two reads that
 //! carry a span, and the one place this database's signedness is answered.
 //! One way in: [`build_pool`], then [`TracedPool`] for a read or
-//! [`connection`] for the rest of the driver's surface.
+//! [`connection`] for the rest of the driver's surface. Readiness has its own,
+//! [`probe_pool`].
 
 mod bigint;
 mod error;
@@ -20,6 +21,6 @@ pub type Client = tokio_postgres::Client;
 
 pub use bigint::Bigint;
 pub use error::Error;
-pub use health::ping;
+pub use health::{ProbePool, ping, probe_pool};
 pub use pool::{Connection, Deadline, Limits, Pool, build_pool, connection, read_url};
 pub use query::TracedPool;

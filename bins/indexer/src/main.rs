@@ -1,7 +1,7 @@
 //! Follows the chain into the two databases, and serves its probes.
 //!
-//! Boot order is config, telemetry, dependencies, listener. There is no chain client to construct
-//! the loop over yet, so the status it would report through stays `starting`.
+//! Boot order is config, telemetry, dependencies, listener. The loop waits for the event processors:
+//! a cursor advanced with nothing to process would pass every event below it unread.
 
 mod config;
 mod probes;
@@ -54,7 +54,7 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
         spoke = %config.spoke,
         hub = %config.hub,
         autostart = config.autostart,
-        "indexer configured; no chain client yet, so the loop does not start"
+        "indexer configured; no event processors yet, so the loop does not start"
     );
 
     let status = Arc::new(IndexerStatus::new());

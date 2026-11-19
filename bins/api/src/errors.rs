@@ -126,7 +126,7 @@ impl ApiError {
 mod tests {
     use super::*;
     use crate::test_support::app::answered;
-    use crate::test_support::observability::Captured;
+    use test_tracing::Captured;
 
     #[tokio::test]
     async fn a_std_error_is_a_500_that_tells_the_caller_nothing() {

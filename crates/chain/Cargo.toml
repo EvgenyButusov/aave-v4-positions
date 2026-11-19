@@ -1,0 +1,49 @@
+[package]
+name = "chain"
+description = "The JSON-RPC providers behind the indexer's chain ports, tried in the order given"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The `RPC_*` group, read from the map a binary hands over.
+env.workspace = true
+# The two ports implemented here, and the error they refuse with.
+indexing.workspace = true
+units.workspace = true
+
+alloy-json-rpc = { version = "2.6.1", default-features = false }
+alloy-primitives = { version = "1.7.3", default-features = false, features = ["serde", "std"] }
+# The client and not `alloy-provider`, whose network types link `k256` for signing that nothing
+# here does. Four calls, each read into the fields the port keeps.
+alloy-rpc-client = { version = "2.6.1", default-features = false }
+alloy-transport = { version = "2.6.1", default-features = false }
+# `reqwest` and not `hyper`: the `hyper` feature switches on `hyper-tls`, which links OpenSSL on
+# the musl image. No `traceparent`, which would send this trace's id to a third-party provider.
+alloy-transport-http = { version = "2.6.1", default-features = false, features = ["reqwest"] }
+async-trait = "0.1.92"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
+opentelemetry = { version = "0.31.0", default-features = false, features = ["metrics"] }
+# `rustls-no-provider` so the config built here names `ring`, as both databases do; `rustls`
+# would add `aws-lc-rs` beside it.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+tower = { version = "0.5.3", default-features = false }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+url = "2.5.8"
+
+[dev-dependencies]
+# A provider is a socket that answers JSON-RPC, so a case stands one up rather than replacing
+# the transport it is testing.
+axum = "0.8.9"
+opentelemetry_sdk = { version = "0.31.0", features = ["testing"] }
+serde_json = "1.0.151"
+test-tracing.workspace = true
+tokio = { version = "1.53.1", features = ["macros", "net", "rt", "time"] }
+tracing-subscriber = "0.3.23"
+
+[lints]
+workspace = true

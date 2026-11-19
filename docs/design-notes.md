@@ -764,8 +764,8 @@ evidence of the branch that lost — leaving every fork looking one block deep. 
 was durably retained and nothing else, which is why the window sits behind its own port,
 `BlockHeaderStore`, and why the adapter that ships behind it is the Postgres one.
 
-**Provider failover is viem's `fallback`**, tried in list order — and the one part of this chapter
-with no Rust counterpart yet, because it belongs to the transport rather than to the loop. Two of its defaults are overridden,
+**Provider failover is viem's `fallback`**, tried in list order — in the Rust, `crates/chain`'s own
+ordered transport, outside the loop's crate because it belongs to the transport. Two of its defaults are overridden,
 both verified against the 2.55 source rather than the docs: `fallback`'s own `retryCount` goes to 0
 so a total outage surfaces immediately instead of after four full sweeps of the list, and the head is
 clamped monotonically in the loop — viem does not reconcile block height between providers, so

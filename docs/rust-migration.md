@@ -98,6 +98,7 @@ crates/
   test-db/                  a migrated schema per case   ← new, dev-only
   test-tracing/             a scoped subscriber that sees every callsite   ← new, dev-only
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
+  chain/                    the JSON-RPC providers behind its two chain ports   ← new
   aave-events/              decoders, two append-only ledgers
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
@@ -109,7 +110,9 @@ bins/
   indexer/                  tokio worker + probe server + five CLIs
 ```
 
-Sixteen crates against eleven packages. `aave-abi` is one addition, and exists because of Risk 1.
+Seventeen crates against eleven packages. `aave-abi` is one addition, and exists because of Risk 1.
+`crates/chain` is another: the alloy adapters `indexing` may not hold, for the reason four paragraphs
+below.
 `crates/test-db` is another, and the note below says why it is a crate rather than a module.
 `crates/test-tracing` is a third: five suites read back what a scoped subscriber saw, and each needs
 the same workaround for [tokio-rs/tracing#3611](https://github.com/tokio-rs/tracing/issues/3611),
@@ -254,7 +257,7 @@ graph exactly, so they stay `[[bin]]` targets of `bins/indexer`.
 | `@nestjs/platform-express` | `axum` + `tower-http` | |
 | `@nestjs/swagger` | `utoipa` + `utoipa-axum` | derive-based, and it reads doc comments — so it maps onto the *field docs* rather than onto the decorators, and `positions.dto.ts`'s 367 lines of restated shape have no counterpart. `utoipa-axum` registers a route with its documentation in one call, which is what the drift guard was going to have to check by hand. **`utoipa-swagger-ui` is not taken**: it embeds the whole 11 MB `swagger-ui-dist` to ship the 2 MB a page loads, and the image copies three files instead |
 | `zod` | hand-rolled `crates/env` | five files. Abort-on-invalid-config is preserved. **Not `serde` + `garde` + `figment`, as this row said before any of it was written**: crates.io's `crates_io_env_vars` is one reader per variable over a map, which is what a test wants and what names the one variable it refused. `Env` owns its map, so a case is `pairs.into_iter().collect()` |
-| `viem` | `alloy` | `alloy-provider`, `alloy-sol-types`, `alloy-transport-http` |
+| `viem` | `alloy` | `alloy-rpc-client` and `alloy-transport-http` over reqwest, then `alloy-sol-types` for the decoders. **Not `alloy-provider`**: its network types link `k256` for signing that nothing here does, and with it `crypto-bigint`'s RUSTSEC-2026-0387 — 285 crates in `crates/chain`'s graph against 235 without it. **Not alloy's `FallbackLayer`** either, which ranks providers by latency and races the best few, where this list is a preference order |
 | `@clickhouse/client` | `clickhouse` crate | 19 call sites, all `JSONEachRow` today; inserts move to RowBinary and `JSONEachRow` stays only where a `body` column is genuinely JSON |
 | `postgres` (postgres.js) | `tokio-postgres` + `deadpool-postgres` | see [Port notes](#port-notes) |
 | `pino` + `nestjs-pino` | `tracing` + `tracing-subscriber` JSON | one JSON object per line is preserved |
@@ -1104,7 +1107,7 @@ Postgres stores, [#65](https://github.com/EugeneButusov/aave-v4-positions/pull/6
 binary parses the set the TypeScript validates, minus the oracle, enrichment and price variables,
 which arrive with their consumers in Phase 4. It serves `/health/live` and `/health/ready`, whose
 three rows are `indexer`, `clickhouse` and `postgres` in that order. It does not construct the loop:
-with no chain client to give it, the status stays `starting` and the stall check answers `up`, which
+with no event processors to give it, the status stays `starting` and the stall check answers `up`, which
 is what a TypeScript pod with `INDEXER_AUTOSTART=false` reports. Every chain variable is validated
 at boot and logged once, the providers by count, so 3b wires values that have already been refused
 when wrong. One bound is new: `STALL_THRESHOLD_MS` gains a one-day ceiling, where the
@@ -1119,6 +1122,28 @@ The alloy adapters and provider health — **outside `crates/indexing`**, see th
 [Target layout](#target-layout) — then `aave-events`: the decoders, both ledgers and the processors.
 `aave-abi` and its drift job land here too, because the decoders are the first thing that needs
 `sol!` bindings and vendoring ABIs before anything reads them would be a copy nothing checks.
+
+**`crates/chain` first.** One `JsonRpc` implements both `ChainClient` and `LogReader` over one ordered
+provider list, so the loop and a processor fail over together and the health state is shared without a
+global. Its transport tries each provider once, in order, and returns the last answer when none
+settles — viem's `fallback` with `retryCount: 0` and `rank: false`, which alloy has no equivalent of.
+What fails over was read off viem rather than assumed: a JSON-RPC error does, exactly as a transport
+failure does, and a revert does not, because every node would give the same one. Four calls, each read
+into the fields the port keeps, so a header parses from four fields rather than alloy's fourteen
+required ones.
+
+Four upstream facts shaped it:
+
+| found | consequence |
+| --- | --- |
+| `alloy-transport-http`'s `hyper` feature switches on `hyper-tls` unconditionally | OpenSSL on the musl image, so the transport is alloy's reqwest one, handed a `ring` config over the host's roots |
+| reqwest's `rustls-no-provider` **panics** in a client built without a TLS config | one constructor builds every client this crate makes |
+| `alloy-rlp-derive` 0.3.17 and `alloy-sol-macro` 1.7.3 generate code the older `alloy-rlp` and `alloy-sol-types` in the lock cannot compile, while declaring bounds that admit them | the lock moved `alloy-rlp`, `alloy-primitives`, `alloy-sol-types` and `alloy-json-abi` together |
+| `alloy-json-rpc` switches on `alloy-primitives`' `map` feature | `foldhash`, Zlib-only, entered the normal graph; `deny.toml` names it |
+
+One difference is deliberate, because metrics are not in the gate: a JSON-RPC refusal at HTTP 200 is
+counted in `rpc.client.errors` under its code. The TypeScript counted it as a 200 and as the provider
+serving, then failed over past it.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

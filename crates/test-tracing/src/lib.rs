@@ -1,7 +1,8 @@
-//! Only ever a dev-dependency. Five suites read back what a scoped subscriber saw, and each needed
-//! the same workaround for one `tracing-core` bug; none of their crates is a home the others may
-//! depend on.
+//! Only ever a dev-dependency: what a scoped subscriber saw, read back, for suites whose crates
+//! cannot depend on one another.
 
+mod captured;
 mod interest;
 
+pub use captured::{Captured, Lines};
 pub use interest::interesting;

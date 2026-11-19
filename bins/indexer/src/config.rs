@@ -26,7 +26,7 @@ pub(crate) struct Config {
     pub(crate) grace: Duration,
     pub(crate) chain: indexing::Options,
     pub(crate) finality_depth: u64,
-    pub(crate) rpc: Rpc,
+    pub(crate) rpc: chain::Config,
     pub(crate) stall_threshold: Duration,
     pub(crate) autostart: bool,
     pub(crate) spoke: Address,
@@ -34,12 +34,6 @@ pub(crate) struct Config {
     pub(crate) clickhouse: clickhouse_client::Config,
     pub(crate) postgres_url: String,
     pub(crate) postgres_limits: postgres::Limits,
-}
-
-pub(crate) struct Rpc {
-    /// A preference order, not a pool: the first is tried first.
-    pub(crate) urls: Vec<String>,
-    pub(crate) timeout: Duration,
 }
 
 impl Config {
@@ -63,10 +57,7 @@ impl Config {
                 poll_interval: env.millis("POLL_INTERVAL_MS", 4_000, 100, 600_000)?,
             },
             finality_depth: env.count("FINALITY_DEPTH", 128, 0, 10_000)?,
-            rpc: Rpc {
-                urls: env.urls("RPC_URLS")?,
-                timeout: env.millis("RPC_TIMEOUT_MS", 10_000, 100, 120_000)?,
-            },
+            rpc: chain::Config::read(env)?,
             stall_threshold: env.millis(
                 "STALL_THRESHOLD_MS",
                 300_000,

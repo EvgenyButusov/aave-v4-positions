@@ -111,9 +111,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::sync::mpsc;
-
+    use test_tracing::Captured;
     use tracing::level_filters::LevelFilter;
 
     use super::*;
@@ -132,54 +130,6 @@ mod tests {
             level: LevelFilter::INFO,
             pretty: false,
             disabled,
-        }
-    }
-
-    /// Everything a filtered layer let through, as the bytes it wrote.
-    ///
-    /// A channel rather than a shared buffer: a `Sender` is `Clone` and
-    /// synchronised already, so this needs neither an `Arc` nor a `Mutex`.
-    #[derive(Clone)]
-    struct Captured(mpsc::Sender<Vec<u8>>);
-
-    impl Captured {
-        fn new() -> (Self, Lines) {
-            let (sender, received) = mpsc::channel();
-
-            (Self(sender), Lines(received))
-        }
-    }
-
-    impl io::Write for Captured {
-        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-            let _ = self.0.send(buffer.to_vec());
-
-            Ok(buffer.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
-        type Writer = Self;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
-    /// The other end. [`Lines::read`] consumes it, because a channel is drained
-    /// rather than re-read.
-    struct Lines(mpsc::Receiver<Vec<u8>>);
-
-    impl Lines {
-        fn read(self) -> String {
-            self.0
-                .try_iter()
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .collect()
         }
     }
 

@@ -100,8 +100,7 @@ fn span(name: &'static str, sql: &'static str) -> tracing::Span {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
-
+    use test_tracing::{Captured, Lines};
     use tracing::instrument::WithSubscriber as _;
     use tracing_subscriber::fmt::format::FmtSpan;
 
@@ -112,54 +111,6 @@ mod tests {
     /// A statement every server has the answer to, so this needs no schema.
     const TABLES: &str =
         "SELECT schemaname FROM pg_catalog.pg_tables WHERE schemaname = $1 LIMIT 1";
-
-    /// Somewhere a case can read a subscriber's output back from.
-    ///
-    /// A channel rather than a shared buffer: a `Sender` is `Clone` and
-    /// synchronised already, so this needs neither an `Arc` nor a `Mutex`.
-    #[derive(Clone)]
-    struct Captured(mpsc::Sender<Vec<u8>>);
-
-    impl Captured {
-        fn new() -> (Self, Lines) {
-            let (sender, received) = mpsc::channel();
-
-            (Self(sender), Lines(received))
-        }
-    }
-
-    impl std::io::Write for Captured {
-        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-            let _ = self.0.send(buffer.to_vec());
-
-            Ok(buffer.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
-        type Writer = Self;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
-    /// The other end. [`Lines::read`] consumes it, because a channel is drained
-    /// rather than re-read.
-    struct Lines(mpsc::Receiver<Vec<u8>>);
-
-    impl Lines {
-        fn read(self) -> String {
-            self.0
-                .try_iter()
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .collect()
-        }
-    }
 
     /// A pool and somewhere to read its spans back from, which both cases want.
     fn watched() -> (TracedPool, Lines, impl tracing::Subscriber) {

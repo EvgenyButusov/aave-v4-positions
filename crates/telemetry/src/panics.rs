@@ -30,48 +30,20 @@ fn said(panic: &str, location: Option<&str>) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
-
-    use tracing_subscriber::fmt::MakeWriter;
+    use test_tracing::Captured;
 
     use super::said;
 
-    #[derive(Clone)]
-    struct Captured(mpsc::Sender<Vec<u8>>);
-
-    impl std::io::Write for Captured {
-        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-            let _ = self.0.send(buffer.to_vec());
-
-            Ok(buffer.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> MakeWriter<'a> for Captured {
-        type Writer = Self;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
     fn logged(panic: &str, location: Option<&str>) -> String {
-        let (sender, received) = mpsc::channel();
+        let (captured, lines) = Captured::new();
         let subscriber = tracing_subscriber::fmt()
             .json()
-            .with_writer(Captured(sender))
+            .with_writer(captured)
             .finish();
 
         tracing::subscriber::with_default(subscriber, || said(panic, location));
 
-        received
-            .try_iter()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .collect()
+        lines.read()
     }
 
     #[tokio::test]
@@ -108,10 +80,10 @@ mod tests {
                 "a panic carrying no message",
             ),
         ] {
-            let (sender, received) = mpsc::channel();
+            let (captured, lines) = Captured::new();
             let subscriber = tracing_subscriber::fmt()
                 .json()
-                .with_writer(Captured(sender))
+                .with_writer(captured)
                 .finish();
 
             // Restored, because the hook is process-wide and a sibling case
@@ -123,10 +95,7 @@ mod tests {
             });
             std::panic::set_hook(previous);
 
-            let line: String = received
-                .try_iter()
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .collect();
+            let line = lines.read();
 
             assert!(line.contains(expected), "{line}");
             assert!(line.contains("panics.rs"), "the location: {line}");

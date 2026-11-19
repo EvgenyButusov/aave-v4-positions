@@ -20,60 +20,11 @@ pub async fn ping(client: &clickhouse::Client) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
-
+    use test_tracing::Captured;
     use tracing::instrument::WithSubscriber as _;
     use tracing_subscriber::fmt::format::FmtSpan;
 
     use super::*;
-
-    /// Somewhere a case can read a subscriber's output back from.
-    ///
-    /// A channel rather than a shared buffer: a `Sender` is `Clone` and
-    /// synchronised already, so this needs neither an `Arc` nor a `Mutex`.
-    #[derive(Clone)]
-    struct Captured(mpsc::Sender<Vec<u8>>);
-
-    impl Captured {
-        fn new() -> (Self, Lines) {
-            let (sender, received) = mpsc::channel();
-
-            (Self(sender), Lines(received))
-        }
-    }
-
-    impl std::io::Write for Captured {
-        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-            let _ = self.0.send(buffer.to_vec());
-
-            Ok(buffer.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
-        type Writer = Self;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
-    /// The other end. [`Lines::read`] consumes it, because a channel is drained
-    /// rather than re-read.
-    struct Lines(mpsc::Receiver<Vec<u8>>);
-
-    impl Lines {
-        fn read(self) -> String {
-            self.0
-                .try_iter()
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .collect()
-        }
-    }
 
     fn config(database: &str) -> crate::Config {
         crate::Config {

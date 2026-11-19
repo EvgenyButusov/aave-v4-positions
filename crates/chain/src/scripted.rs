@@ -1,19 +1,13 @@
-//! A provider on a local socket that answers from a script, and records every call it was asked.
+//! Fake JSON-RPC providers on local sockets that answer from a script and record every call.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use opentelemetry::metrics::MeterProvider as _;
-use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use serde_json::{Value, json};
-
-use crate::config::Config;
-use crate::json_rpc::JsonRpc;
 
 pub(crate) enum Reply {
     Result(Value),
@@ -38,18 +32,18 @@ struct Answering {
     calls: mpsc::Sender<Call>,
 }
 
-pub(crate) struct Node {
+pub(crate) struct ScriptedNode {
     pub(crate) url: String,
     pub(crate) label: String,
 }
 
 /// Every node a case stands up reports into one of these, so the order across providers is kept.
-pub(crate) struct Network {
+pub(crate) struct ScriptedNetwork {
     calls: mpsc::Sender<Call>,
     received: mpsc::Receiver<Call>,
 }
 
-impl Network {
+impl ScriptedNetwork {
     pub(crate) fn new() -> Self {
         let (calls, received) = mpsc::channel();
 
@@ -60,7 +54,7 @@ impl Network {
         &self,
         name: &str,
         script: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static,
-    ) -> Node {
+    ) -> ScriptedNode {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let router = axum::Router::new()
@@ -72,7 +66,7 @@ impl Network {
             });
         tokio::spawn(async move { axum::serve(listener, router).await });
 
-        Node {
+        ScriptedNode {
             url: format!("http://{address}"),
             label: address.to_string(),
         }
@@ -128,33 +122,6 @@ pub(crate) fn in_turn(
 
 /// Port 1, where nothing listens: a provider that is down rather than slow.
 pub(crate) const UNREACHABLE: &str = "http://127.0.0.1:1";
-
-pub(crate) struct Client {
-    pub(crate) rpc: JsonRpc,
-    pub(crate) exporter: InMemoryMetricExporter,
-    pub(crate) meters: SdkMeterProvider,
-}
-
-pub(crate) fn client(urls: &[&str]) -> Client {
-    client_within(urls, Duration::from_secs(5))
-}
-
-pub(crate) fn client_within(urls: &[&str], timeout: Duration) -> Client {
-    let exporter = InMemoryMetricExporter::default();
-    let meters = SdkMeterProvider::builder()
-        .with_reader(PeriodicReader::builder(exporter.clone()).build())
-        .build();
-    let config = Config {
-        urls: urls.iter().map(|url| (*url).to_owned()).collect(),
-        timeout,
-    };
-
-    Client {
-        rpc: JsonRpc::connect(&config, &meters.meter("test")).unwrap(),
-        exporter,
-        meters,
-    }
-}
 
 pub(crate) fn hex(number: u64) -> Value {
     Value::String(format!("{number:#x}"))

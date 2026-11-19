@@ -3,12 +3,14 @@
 
 mod config;
 mod error;
+#[cfg(test)]
+mod harness;
 mod http;
 mod json_rpc;
-#[cfg(test)]
-mod node;
 mod providers;
 mod refusal;
+#[cfg(test)]
+mod scripted;
 
 pub use config::Config;
 pub use error::Error;

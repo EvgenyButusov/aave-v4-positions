@@ -6,7 +6,8 @@ use serde_json::{Value, json};
 use units::ChainId;
 
 use super::{Log, Unexpected};
-use crate::node::{Network, Reply, client, hex};
+use crate::harness::harness;
+use crate::scripted::{Reply, ScriptedNetwork, hex};
 
 const SPOKE: Address = address!("0x94e7a5dcbe816e498b89ab752661904e2f56c485");
 const HUB: Address = address!("0xcca852bc40e560adc3b1cc58ca5b55638ce826c9");
@@ -57,32 +58,32 @@ fn header(number: u64, timestamp: u64) -> Value {
 
 #[tokio::test]
 async fn builds_its_client_without_reaching_the_network() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network.node("primary", |_, _| Reply::Result(hex(1))).await;
 
-    let _client = client(&[&primary.url]);
+    let _client = harness(&[&primary.url]);
 
     assert!(network.asked().is_empty());
 }
 
 #[tokio::test]
 async fn reads_the_chain_id() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network.node("primary", |_, _| Reply::Result(hex(1))).await;
 
-    let chain_id = client(&[&primary.url]).rpc.chain_id().await.unwrap();
+    let chain_id = harness(&[&primary.url]).rpc.chain_id().await.unwrap();
 
     assert_eq!(chain_id, ChainId::known(1));
 }
 
 #[tokio::test]
 async fn refuses_a_chain_id_no_chain_can_have() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(hex(1 << 53)))
         .await;
 
-    let refusal = client(&[&primary.url]).rpc.chain_id().await.unwrap_err();
+    let refusal = harness(&[&primary.url]).rpc.chain_id().await.unwrap_err();
 
     assert!(
         matches!(refusal, ChainError::Unavailable { .. }),
@@ -92,12 +93,12 @@ async fn refuses_a_chain_id_no_chain_can_have() {
 
 #[tokio::test]
 async fn reads_the_head_as_a_plain_height() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(json!("0x1793603")))
         .await;
 
-    let head = client(&[&primary.url])
+    let head = harness(&[&primary.url])
         .rpc
         .head_block_number()
         .await
@@ -108,28 +109,32 @@ async fn reads_the_head_as_a_plain_height() {
 
 #[tokio::test]
 async fn re_reads_the_head_on_every_call_rather_than_serving_a_cached_one() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node(
             "primary",
-            crate::node::in_turn(|nth| Reply::Result(hex(100 + nth as u64))),
+            crate::scripted::in_turn(|nth| Reply::Result(hex(100 + nth as u64))),
         )
         .await;
 
-    let client = client(&[&primary.url]);
+    let harness = harness(&[&primary.url]);
 
-    assert_eq!(client.rpc.head_block_number().await.unwrap(), 100);
-    assert_eq!(client.rpc.head_block_number().await.unwrap(), 101);
+    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 100);
+    assert_eq!(harness.rpc.head_block_number().await.unwrap(), 101);
 }
 
 #[tokio::test]
 async fn reads_a_header_from_the_four_fields_it_keeps() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(header(100, 0x6600)))
         .await;
 
-    let header = client(&[&primary.url]).rpc.block_header(100).await.unwrap();
+    let header = harness(&[&primary.url])
+        .rpc
+        .block_header(100)
+        .await
+        .unwrap();
 
     assert_eq!(
         header,
@@ -149,12 +154,12 @@ async fn reads_a_header_from_the_four_fields_it_keeps() {
 
 #[tokio::test]
 async fn a_block_the_node_does_not_have_is_an_error_and_not_a_default() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(Value::Null))
         .await;
 
-    let refusal = client(&[&primary.url])
+    let refusal = harness(&[&primary.url])
         .rpc
         .block_header(100)
         .await
@@ -168,12 +173,12 @@ async fn a_block_the_node_does_not_have_is_an_error_and_not_a_default() {
 
 #[tokio::test]
 async fn sends_the_addresses_range_and_topic_filter_to_the_provider() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(json!([])))
         .await;
 
-    client(&[&primary.url])
+    harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![SUPPLY, BORROW]))
         .await
@@ -193,12 +198,12 @@ async fn sends_the_addresses_range_and_topic_filter_to_the_provider() {
 
 #[tokio::test]
 async fn omits_the_topic_filter_entirely_when_no_signature_is_given() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Result(json!([])))
         .await;
 
-    client(&[&primary.url])
+    harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -210,14 +215,14 @@ async fn omits_the_topic_filter_entirely_when_no_signature_is_given() {
 
 #[tokio::test]
 async fn converts_every_quantity_in_a_log() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| {
             Reply::Result(json!([log(150, 7, Some(1_700_000_000))]))
         })
         .await;
 
-    let logs = client(&[&primary.url])
+    let logs = harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![SUPPLY]))
         .await
@@ -241,14 +246,14 @@ async fn converts_every_quantity_in_a_log() {
 
 #[tokio::test]
 async fn uses_the_providers_timestamp_without_a_single_extra_request() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| {
             Reply::Result(json!([log(150, 0, Some(1)), log(151, 0, Some(2))]))
         })
         .await;
 
-    client(&[&primary.url])
+    harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -259,7 +264,7 @@ async fn uses_the_providers_timestamp_without_a_single_extra_request() {
 
 #[tokio::test]
 async fn reads_one_header_per_distinct_block_when_the_provider_omits_the_timestamp() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |method, params| match method {
             "eth_getLogs" => Reply::Result(json!([
@@ -276,7 +281,7 @@ async fn reads_one_header_per_distinct_block_when_the_provider_omits_the_timesta
         })
         .await;
 
-    let logs = client(&[&primary.url])
+    let logs = harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -297,7 +302,7 @@ async fn reads_one_header_per_distinct_block_when_the_provider_omits_the_timesta
 
 #[tokio::test]
 async fn refuses_a_log_that_belongs_to_no_block() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| {
             let mut pending = log(150, 0, Some(1));
@@ -307,7 +312,7 @@ async fn refuses_a_log_that_belongs_to_no_block() {
         })
         .await;
 
-    let refusal = client(&[&primary.url])
+    let refusal = harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -349,7 +354,7 @@ fn refuses_a_log_whose_timestamp_neither_it_nor_a_header_gave() {
 
 #[tokio::test]
 async fn names_a_range_refusal_so_the_caller_can_narrow() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Error {
             code: -32602,
@@ -357,7 +362,7 @@ async fn names_a_range_refusal_so_the_caller_can_narrow() {
         })
         .await;
 
-    let refusal = client(&[&primary.url])
+    let refusal = harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -377,7 +382,7 @@ async fn names_a_range_refusal_so_the_caller_can_narrow() {
 
 #[tokio::test]
 async fn takes_the_last_providers_refusal_when_every_one_refuses() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network
         .node("primary", |_, _| Reply::Error {
             code: -32602,
@@ -391,7 +396,7 @@ async fn takes_the_last_providers_refusal_when_every_one_refuses() {
         })
         .await;
 
-    let refusal = client(&[&primary.url, &secondary.url])
+    let refusal = harness(&[&primary.url, &secondary.url])
         .rpc
         .logs(&filter(vec![]))
         .await
@@ -405,10 +410,10 @@ async fn takes_the_last_providers_refusal_when_every_one_refuses() {
 
 #[tokio::test]
 async fn an_ordinary_failure_is_unavailable_and_not_a_range_refusal() {
-    let network = Network::new();
+    let network = ScriptedNetwork::new();
     let primary = network.node("primary", |_, _| Reply::Status(500)).await;
 
-    let refusal = client(&[&primary.url])
+    let refusal = harness(&[&primary.url])
         .rpc
         .logs(&filter(vec![]))
         .await

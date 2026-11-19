@@ -24,7 +24,6 @@ mod tests {
 
     use tracing::instrument::WithSubscriber as _;
     use tracing_subscriber::fmt::format::FmtSpan;
-    use tracing_subscriber::layer::SubscriberExt as _;
 
     use super::*;
 
@@ -76,22 +75,6 @@ mod tests {
         }
     }
 
-    /// What the driver's `opentelemetry` feature buys: the span is emitted
-    /// either way, the feature makes it a client span and adds `traceparent`.
-    /// Dropping it from the manifest is silent everywhere else.
-    /// `tracing` caches callsite interest from the *global* subscriber, which is
-    /// `NoSubscriber` here and answers "never". A sibling case querying with
-    /// nothing in scope leaves `clickhouse.query` disabled for the process.
-    fn interesting() {
-        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-        ONCE.get_or_init(|| {
-            let _ = tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::TRACE),
-            );
-        });
-    }
-
     fn config(database: &str) -> crate::Config {
         crate::Config {
             url: std::env::var("CLICKHOUSE_URL")
@@ -132,9 +115,12 @@ mod tests {
         );
     }
 
+    /// What the driver's `opentelemetry` feature buys: the span is emitted
+    /// either way, the feature makes it a client span and adds `traceparent`.
+    /// Dropping it from the manifest is silent everywhere else.
     #[tokio::test]
     async fn a_query_is_a_client_span_of_a_named_system() {
-        interesting();
+        test_tracing::interesting();
         let client = crate::build_client(config("default")).unwrap();
         let (captured, lines) = Captured::new();
         let subscriber = tracing_subscriber::fmt()

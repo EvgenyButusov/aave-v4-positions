@@ -126,7 +126,7 @@ impl ApiError {
 mod tests {
     use super::*;
     use crate::test_support::app::answered;
-    use crate::test_support::observability::{Captured, interesting};
+    use crate::test_support::observability::Captured;
 
     #[tokio::test]
     async fn a_std_error_is_a_500_that_tells_the_caller_nothing() {
@@ -150,9 +150,8 @@ mod tests {
 
     #[test]
     fn the_log_line_carries_the_cause_and_the_wire_still_does_not() {
-        // `interesting` because the case above reaches this same callsite with
-        // nothing in scope, which settles it off for the process.
-        interesting();
+        // The case above reaches this same callsite with nothing in scope.
+        test_tracing::interesting();
         let (captured, lines) = Captured::new();
         let subscriber = tracing_subscriber::fmt()
             .json()

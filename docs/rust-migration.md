@@ -96,6 +96,7 @@ crates/
   postgres/                 connect
   migrations/               every `.sql` this deployment applies, embedded
   test-db/                  a migrated schema per case   ← new, dev-only
+  test-tracing/             a scoped subscriber that sees every callsite   ← new, dev-only
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
   aave-events/              decoders, two append-only ledgers
   aave-positions/           folds, read stores, valuation (the math)
@@ -108,8 +109,13 @@ bins/
   indexer/                  tokio worker + probe server + five CLIs
 ```
 
-Fifteen crates against eleven packages. `aave-abi` is one addition, and exists because of Risk 1.
+Sixteen crates against eleven packages. `aave-abi` is one addition, and exists because of Risk 1.
 `crates/test-db` is another, and the note below says why it is a crate rather than a module.
+`crates/test-tracing` is a third: five suites read back what a scoped subscriber saw, and each needs
+the same workaround for [tokio-rs/tracing#3611](https://github.com/tokio-rs/tracing/issues/3611),
+which caches a callsite's interest from whichever thread reaches it first while only one dispatcher
+is registered. No crate the five share could hold it: `clickhouse`, `postgres` and `indexing` do not
+link `telemetry`, and `test-db` is a database. It goes when the upstream fix does.
 
 The `indexing/` line lost its alloy adapters: the ports, the loop and the durable stores are inside
 that crate and the adapters are not, for the reason four paragraphs below. Phase 3a is where that

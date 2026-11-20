@@ -284,9 +284,11 @@ commit. There is no Rust equivalent of it.
 as 4.61.2 publishes them, with `sol!` generating the bindings, and the Main Spoke, its oracle and the
 Core Hub as one `Deployment` — the same single-Spoke, single-Hub configuration as today, with a second
 Spoke a second value. **CI's `abi-drift` job re-extracts from the pinned npm version and fails on any
-diff**: [`scripts/aave-abi-drift.sh`](../scripts/aave-abi-drift.sh) unpacks the tarball, runs
-[`scripts/extract-aave-abi.mts`](../scripts/extract-aave-abi.mts) over it, and also refuses a version
-the pnpm catalog does not pin, so the two indexers cannot follow different books. That keeps the
+diff**: [`scripts/aave-abi-drift.sh`](../scripts/aave-abi-drift.sh) fetches the tarball with `curl`,
+runs [`scripts/extract-aave-abi.sh`](../scripts/extract-aave-abi.sh) over it, and also refuses a
+version the pnpm catalog does not pin, so the two indexers cannot follow different books. Nothing in
+it runs JavaScript: each ABI is the one generated array literal in `dist/abis/<name>.js`, JSON but
+for its unquoted keys, and the addresses are read from the book's own `src/AaveV4Ethereum.sol`. That keeps the
 design notes' claim that the ABI is "taken from the official address book rather than transcribed"
 true, and turns an upstream change into a red build rather than a silent divergence.
 

@@ -291,9 +291,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-
       - name: The vendored ABIs are what the pinned address book publishes
         run: ./scripts/aave-abi-drift.sh

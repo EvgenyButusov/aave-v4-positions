@@ -1,6 +1,6 @@
-//! `sol!` over `abi/IAaveOracleV4.json`: `build.rs` writes a repaired copy and the call into `OUT_DIR`.
+//! `abi/IAaveOracleV4.json` twice over: the `sol!` types `build.rs` generates, and the raw JSON.
 
-include!(concat!(env!("OUT_DIR"), "/oracle.rs"));
+include!(concat!(env!("OUT_DIR"), "/oracle_bindings.rs"));
 
-/// The vendored ABI, as `@aave-dao/aave-address-book` publishes it.
-pub const JSON: &str = include_str!("../abi/IAaveOracleV4.json");
+/// The vendored ABI as published, for code that reads it at runtime.
+pub const ABI_JSON: &str = include_str!("../abi/IAaveOracleV4.json");

@@ -1,11 +1,11 @@
-//! `sol!` over `abi/ISpokeV4.json`: `build.rs` writes a repaired copy and the call into `OUT_DIR`.
+//! `abi/ISpokeV4.json` twice over: the `sol!` types `build.rs` generates, and the raw JSON.
 
 #![expect(
     clippy::too_many_arguments,
     reason = "`sol!` gives each event a constructor over every field, and `LiquidationCall` has eleven"
 )]
 
-include!(concat!(env!("OUT_DIR"), "/spoke.rs"));
+include!(concat!(env!("OUT_DIR"), "/spoke_bindings.rs"));
 
-/// The vendored ABI, as `@aave-dao/aave-address-book` publishes it.
-pub const JSON: &str = include_str!("../abi/ISpokeV4.json");
+/// The vendored ABI as published, for code that reads it at runtime.
+pub const ABI_JSON: &str = include_str!("../abi/ISpokeV4.json");

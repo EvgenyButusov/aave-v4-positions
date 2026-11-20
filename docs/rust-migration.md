@@ -96,7 +96,7 @@ crates/
   postgres/                 connect
   migrations/               every `.sql` this deployment applies, embedded
   test-db/                  a migrated schema per case   ← new, dev-only
-  test-tracing/             a scoped subscriber that sees every callsite   ← new, dev-only
+  test-tracing/             what a scoped subscriber in a test saw   ← new, dev-only
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
   chain/                    the JSON-RPC providers behind its two chain ports   ← new
   aave-events/              decoders, two append-only ledgers
@@ -114,11 +114,12 @@ Seventeen crates against eleven packages. `aave-abi` is one addition, and exists
 `crates/chain` is another: the alloy adapters `indexing` may not hold, for the reason four paragraphs
 below.
 `crates/test-db` is another, and the note below says why it is a crate rather than a module.
-`crates/test-tracing` is a third: five suites read back what a scoped subscriber saw, and each needs
-the same workaround for [tokio-rs/tracing#3611](https://github.com/tokio-rs/tracing/issues/3611),
-which caches a callsite's interest from whichever thread reaches it first while only one dispatcher
-is registered. No crate the five share could hold it: `clickhouse`, `postgres` and `indexing` do not
-link `telemetry`, and `test-db` is a database. It goes when the upstream fix does.
+`crates/test-tracing` is a third: seven crates' suites read back what a scoped subscriber saw, through
+one `Captured` writer, and most need the same workaround for
+[tokio-rs/tracing#3611](https://github.com/tokio-rs/tracing/issues/3611), which caches a callsite's
+interest from whichever thread reaches it first while only one dispatcher is registered. No crate
+they share could hold either: `clickhouse`, `postgres` and `indexing` do not link `telemetry`, and
+`test-db` is a database. The workaround goes when the upstream fix does; the writer stays.
 
 The `indexing/` line lost its alloy adapters: the ports, the loop and the durable stores are inside
 that crate and the adapters are not, for the reason four paragraphs below. Phase 3a is where that

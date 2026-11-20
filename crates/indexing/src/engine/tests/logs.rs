@@ -1,8 +1,6 @@
 //! What an operator reads, captured from the formatted log.
 
-use std::io::Write;
-use std::sync::{Arc, Mutex};
-
+use test_tracing::Captured;
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -11,48 +9,20 @@ use crate::engine::harness::{failed, plain};
 use crate::fixtures::hash_of;
 use crate::reorg::Verdict;
 
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Captured {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(|held| held.into_inner())
-            .extend_from_slice(bytes);
-
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 async fn logged(indexer: &mut Indexer) -> Vec<String> {
     test_tracing::interesting();
 
-    let captured = Captured::default();
-    let writer = captured.clone();
+    let (captured, written) = Captured::new();
     let subscriber = tracing_subscriber::registry().with(
         tracing_subscriber::fmt::layer()
             .with_ansi(false)
             .without_time()
-            .with_writer(move || writer.clone()),
+            .with_writer(captured),
     );
 
     indexer.run().with_subscriber(subscriber).await;
 
-    let bytes = captured
-        .0
-        .lock()
-        .unwrap_or_else(|held| held.into_inner())
-        .clone();
-    String::from_utf8(bytes)
-        .unwrap()
-        .lines()
-        .map(str::to_owned)
-        .collect()
+    written.read().lines().map(str::to_owned).collect()
 }
 
 fn line<'a>(lines: &'a [String], message: &str) -> Vec<&'a String> {

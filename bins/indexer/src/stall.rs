@@ -90,9 +90,7 @@ impl Stall {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-    use std::sync::Mutex;
-
+    use test_tracing::Captured;
     use tracing::instrument::WithSubscriber as _;
 
     use super::*;
@@ -163,33 +161,15 @@ mod tests {
         );
     }
 
-    #[derive(Clone, Default)]
-    struct Captured(Arc<Mutex<Vec<u8>>>);
-
-    impl Write for Captured {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0
-                .lock()
-                .unwrap_or_else(|held| held.into_inner())
-                .extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[tokio::test(start_paused = true)]
     async fn logs_a_stall_once_when_it_starts_and_once_when_it_ends() {
         test_tracing::interesting();
         let (status, stall) = stall();
-        let captured = Captured::default();
-        let writer = captured.clone();
+        let (captured, written) = Captured::new();
         let subscriber = tracing_subscriber::fmt()
             .with_ansi(false)
             .without_time()
-            .with_writer(move || writer.clone())
+            .with_writer(captured)
             .finish();
 
         async {
@@ -206,7 +186,7 @@ mod tests {
         .with_subscriber(subscriber)
         .await;
 
-        let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        let log = written.read();
         let lines: Vec<&str> = log.lines().collect();
         assert_eq!(lines.len(), 2, "{log}");
         assert!(

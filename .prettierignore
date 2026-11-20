@@ -13,3 +13,6 @@ docs/
 # Cargo build output. `prettier --check .` walks the tree looking for JSON, and
 # target/debug/.fingerprint is nothing but.
 target/
+
+# Written by scripts/extract-aave-abi.mjs, and compared with its output byte for byte in CI.
+crates/aave-abi/abi/

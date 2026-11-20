@@ -5,6 +5,6 @@
     "types": ["node"],
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.root.tsbuildinfo"
   },
-  "include": ["vitest.config.mts"],
+  "include": ["vitest.config.mts", "scripts/*.mts"],
   "exclude": ["node_modules", "apps", "packages"]
 }

@@ -89,7 +89,7 @@ A Cargo workspace at the repo root, beside the pnpm one. [`compose.yaml`](../com
 ```
 Cargo.toml                  workspace
 crates/
-  aave-abi/                 vendored ABI JSON + sol! bindings + addresses   ← new, see Risk 1
+  aave-abi/                 vendored ABI JSON + sol! bindings + the deployment followed   ← new, see Risk 1
   telemetry/                OTLP init for traces, metrics, logs
   ops/                      the probe report, its router, and the graceful shutdown
   clickhouse/               client   ← package `clickhouse-client`
@@ -280,12 +280,15 @@ Three files import ABIs from it and two import addresses. It is pinned to `4.61.
 so a caret range would let the addresses the indexer targets change between two installs of the same
 commit. There is no Rust equivalent of it.
 
-`crates/aave-abi` holds the extracted `ISpokeV4`, `IHubV4` and `IAaveOracleV4` JSON with
-`alloy::sol!` generating the bindings, plus the Main Spoke, Core Hub and oracle addresses as
-constants — the same single-Spoke, single-Hub configuration as today. **A CI job re-extracts from the
-pinned npm version and fails on any diff**, landing with the crate in Phase 3. That keeps the design notes' claim that the ABI is "taken
-from the official address book rather than transcribed" true, and turns an upstream change into a red
-build rather than a silent divergence.
+`crates/aave-abi` holds the extracted `ISpokeV4`, `IHubV4` and `IAaveOracleV4` JSON, byte for byte
+as 4.61.2 publishes them, with `sol!` generating the bindings, and the Main Spoke, its oracle and the
+Core Hub as one `Deployment` — the same single-Spoke, single-Hub configuration as today, with a second
+Spoke a second value. **CI's `abi-drift` job re-extracts from the pinned npm version and fails on any
+diff**: [`scripts/aave-abi-drift.sh`](../scripts/aave-abi-drift.sh) unpacks the tarball, runs
+[`scripts/extract-aave-abi.mts`](../scripts/extract-aave-abi.mts) over it, and also refuses a version
+the pnpm catalog does not pin, so the two indexers cannot follow different books. That keeps the
+design notes' claim that the ABI is "taken from the official address book rather than transcribed"
+true, and turns an upstream change into a red build rather than a silent divergence.
 
 ### 2. There is no auto-instrumentation in Rust
 
@@ -1145,6 +1148,15 @@ Four upstream facts shaped it:
 One difference is deliberate, because metrics are not in the gate: a JSON-RPC refusal at HTTP 200 is
 counted in `rpc.client.errors` under its code. The TypeScript counted it as a 200 and as the provider
 serving, then failed over past it.
+
+**`crates/aave-abi` second.** The vendored files are exactly what the drift job extracts, so the one
+repair `sol!` needs is made in `build.rs` on a copy: the Spoke's `getReserve` returns a `ReserveFlags`
+named without a namespace, and alloy-json-abi 1.7.3's `to_sol` declares that type inside the interface
+while the `ISpoke.Reserve` struct using it sits in a library outside, so the macro cannot resolve it.
+The copy gives it its underlying `uint8`, which changes no encoding. `sol!` offers no way to pass
+`ToSolConfig::one_contract`, which would have avoided it. Every topic0 in the analysis's §4 tables —
+twenty Spoke events and twelve Hub ones — is asserted against the bindings, where the TypeScript
+checked the Hub's eleven.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

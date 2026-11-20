@@ -5,16 +5,10 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use alloy_primitives::{Address, address};
+use aave_abi::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
+use alloy_primitives::Address;
 use env::{Env, Invalid, Source};
 use units::ChainId;
-
-/// The Core Hub's first log, eight blocks before the Main Spoke's: the floor has to be the
-/// earliest of the contracts followed, or the first `AddAsset` is missed and reads as a quiet chain.
-const CORE_HUB_GENESIS_BLOCK: u64 = 24_720_891;
-
-const MAIN_SPOKE: Address = address!("0x94e7a5dcbe816e498b89ab752661904e2f56c485");
-const CORE_HUB: Address = address!("0xcca852bc40e560adc3b1cc58ca5b55638ce826c9");
 
 /// A day: a bound against the absurd, and not a units check.
 const MAX_STALL_THRESHOLD_MS: u64 = 86_400_000;
@@ -52,7 +46,7 @@ impl Config {
             grace: Duration::from_secs(env.seconds("SHUTDOWN_GRACE_SECONDS", 10, 300)?),
             chain: indexing::Options {
                 chain_id: env.required_as::<ChainId>("CHAIN_ID")?,
-                start_block: env.count("START_BLOCK", CORE_HUB_GENESIS_BLOCK, 0, u64::MAX)?,
+                start_block: env.count("START_BLOCK", FOLLOWED.first_block, 0, u64::MAX)?,
                 max_range_size: env.count("MAX_RANGE_SIZE", 1_000, 1, 100_000)?,
                 poll_interval: env.millis("POLL_INTERVAL_MS", 4_000, 100, 600_000)?,
             },
@@ -65,8 +59,8 @@ impl Config {
                 MAX_STALL_THRESHOLD_MS,
             )?,
             autostart: env.flag("AUTOSTART", true)?,
-            spoke: env.address_20("MAIN_SPOKE_ADDRESS", MAIN_SPOKE)?,
-            hub: env.address_20("CORE_HUB_ADDRESS", CORE_HUB)?,
+            spoke: env.address_20("MAIN_SPOKE_ADDRESS", FOLLOWED.spoke)?,
+            hub: env.address_20("CORE_HUB_ADDRESS", FOLLOWED.hub)?,
             clickhouse: clickhouse_client::Config::read(env)?,
             postgres_url: postgres::read_url(env)?,
             postgres_limits: postgres::Limits::read(env)?,

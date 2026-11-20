@@ -1,0 +1,25 @@
+[package]
+name = "aave-abi"
+description = "The Aave V4 ABIs and deployment this service follows, as the address book publishes them"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+units.workspace = true
+
+# `Address` and `address!`, for the deployment's contracts.
+alloy-primitives = { version = "1.7.3", default-features = false, features = ["std"] }
+# `sol!` over the vendored JSON, which is what `json` enables.
+alloy-sol-types = { version = "1.7.3", default-features = false, features = ["json", "std"] }
+
+[build-dependencies]
+# The build script reads each vendored ABI and writes the copy `sol!` is handed.
+serde_json = "1.0.151"
+
+[dev-dependencies]
+# The vendored deployment, read back so the constants are checked against it.
+serde_json = "1.0.151"
+
+[lints]
+workspace = true

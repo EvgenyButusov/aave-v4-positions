@@ -89,7 +89,6 @@ A Cargo workspace at the repo root, beside the pnpm one. [`compose.yaml`](../com
 ```
 Cargo.toml                  workspace
 crates/
-  aave-abi/                 vendored ABI JSON + sol! bindings + the deployment followed   ← new, see Risk 1
   telemetry/                OTLP init for traces, metrics, logs
   ops/                      the probe report, its router, and the graceful shutdown
   clickhouse/               client   ← package `clickhouse-client`
@@ -99,7 +98,8 @@ crates/
   test-tracing/             what a scoped subscriber in a test saw   ← new, dev-only
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
   chain/                    the JSON-RPC providers behind its two chain ports   ← new
-  aave-events/              decoders, two append-only ledgers
+  aave/                     vendored ABIs + sol! bindings (see Risk 1), the deployment followed,
+                            decoders, two append-only ledgers
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
   prices/                   enrichment: the Spoke oracle
@@ -110,9 +110,8 @@ bins/
   indexer/                  tokio worker + probe server + five CLIs
 ```
 
-Seventeen crates against eleven packages. `aave-abi` is one addition, and exists because of Risk 1.
-`crates/chain` is another: the alloy adapters `indexing` may not hold, for the reason four paragraphs
-below.
+Sixteen crates against eleven packages. `crates/chain` is one addition: the alloy adapters `indexing`
+may not hold, for the reason four paragraphs below.
 `crates/test-db` is another, and the note below says why it is a crate rather than a module.
 `crates/test-tracing` is a third: seven crates' suites read back what a scoped subscriber saw, through
 one `Captured` writer, and most need the same workaround for
@@ -280,7 +279,7 @@ Three files import ABIs from it and two import addresses. It is pinned to `4.61.
 so a caret range would let the addresses the indexer targets change between two installs of the same
 commit. There is no Rust equivalent of it.
 
-`crates/aave-abi` holds the extracted `ISpokeV4`, `IHubV4` and `IAaveOracleV4` JSON, byte for byte
+`crates/aave` holds the extracted `ISpokeV4`, `IHubV4` and `IAaveOracleV4` JSON, byte for byte
 as 4.61.2 publishes them, with `sol!` generating the bindings, and the Main Spoke, its oracle and the
 Core Hub as one `Deployment` — the same single-Spoke, single-Hub configuration as today, with a second
 Spoke a second value. **CI's `abi-drift` job re-extracts from the pinned npm version and fails on any
@@ -646,9 +645,9 @@ is 72 bytes and has been truncated on every run since it was written; it is
 
 Cargo workspace, `clickhouse-client`, `postgres`, and `bins/migrate`.
 
-`aave-abi`, `telemetry` and `ops` were scoped here and moved out: none has a Rust consumer until a
+The vendored ABIs, `telemetry` and `ops` were scoped here and moved out: none has a Rust consumer until a
 binary exists that needs one, and Phase 0's gate never covered them. `telemetry` and `ops` go to
-Phase 2 with `bins/api`; `aave-abi` to Phase 3 with the decoders. Building them here would have been
+Phase 2 with `bins/api`; the ABIs to Phase 3 with the decoders. Building them here would have been
 three crates and a CI job with no caller and nothing to prove them against.
 
 **The runner is [refinery](https://docs.rs/refinery), not hand-rolled.** It drives Postgres natively.
@@ -1125,8 +1124,8 @@ provider's error taxonomy, and the differential gate below.
 #### Phase 3b — the chain, and Aave ingestion
 
 The alloy adapters and provider health — **outside `crates/indexing`**, see the note under
-[Target layout](#target-layout) — then `aave-events`: the decoders, both ledgers and the processors.
-`aave-abi` and its drift job land here too, because the decoders are the first thing that needs
+[Target layout](#target-layout) — then `crates/aave`: the decoders, both ledgers and the processors.
+The vendored ABIs and their drift job land in it too, because the decoders are the first thing that needs
 `sol!` bindings and vendoring ABIs before anything reads them would be a copy nothing checks.
 
 **`crates/chain` first.** One `JsonRpc` implements both `ChainClient` and `LogReader` over one ordered
@@ -1151,7 +1150,7 @@ One difference is deliberate, because metrics are not in the gate: a JSON-RPC re
 counted in `rpc.client.errors` under its code. The TypeScript counted it as a 200 and as the provider
 serving, then failed over past it.
 
-**`crates/aave-abi` second.** The vendored files are exactly what the drift job extracts, so the one
+**`crates/aave`'s ABIs second.** The vendored files are exactly what the drift job extracts, so the one
 repair `sol!` needs is made in `build.rs` on a copy: the Spoke's `getReserve` returns a `ReserveFlags`
 named without a namespace, and alloy-json-abi 1.7.3's `to_sol` declares that type inside the interface
 while the `ISpoke.Reserve` struct using it sits in a library outside, so the macro cannot resolve it.
@@ -1160,7 +1159,7 @@ The copy gives it its underlying `uint8`, which changes no encoding. `sol!` offe
 twenty Spoke events and twelve Hub ones — is asserted against the bindings, where the TypeScript
 checked the Hub's eleven.
 
-**`crates/aave-events` third.** The decoders and the two ledgers. The ledgers' `body` column is
+**Its events third.** The decoders and the two ledgers. The ledgers' `body` column is
 what the fold's materialized views read and what the gate compares, so it is written byte for byte as
 the TypeScript wrote it from viem 2.55.10: the indexed arguments first and then the rest, each in ABI
 order, since that is the order viem assigns them in; an integer of up to 48 bits as a JSON number and
@@ -1168,12 +1167,17 @@ anything wider as a decimal string; addresses checksummed; a named tuple as an o
 generic algorithm, so the port is generic too — `alloy-dyn-abi` decodes against the vendored JSON and
 one renderer walks the values — rather than a serializer per event, and the JSON is written by hand
 because `serde_json`'s map sorts its keys without `preserve_order`. The oracle is
-`crates/aave-events/fixtures/golden.json`: the 22 decoder fixture logs, real mainnet ones and the
+`crates/aave/fixtures/golden.json`: the 22 decoder fixture logs, real mainnet ones and the
 flagged synthetic ones, each beside the row the TypeScript appended for it, captured once and covering
 all twenty-one followed events. Every row comes out identical. The ledger cases run against a database
 migrated with the whole corpus rather than the ledger migrations alone, so each append also runs the
 fold's views over what it wrote — which the TypeScript specs could not, because their hand-made
 bodies would have made those views throw.
+
+The ABIs and the events are one crate. The ABIs' second consumer will be the oracle read in `prices`,
+which `bins/api` links; that is when to split them again, if the API should not link the ledgers
+with them. Measured as two crates: rebuilding the ABI half took 4.2s, almost all of it `sol!`
+expanding three ABIs, against 1.3s for the events half, so an edit to a decoder now pays for both.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

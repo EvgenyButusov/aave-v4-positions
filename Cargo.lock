@@ -3,23 +3,13 @@
 version = 4
 
 [[package]]
-name = "aave-abi"
+name = "aave"
 version = "0.0.0"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "serde_json",
- "units",
-]
-
-[[package]]
-name = "aave-events"
-version = "0.0.0"
-dependencies = [
- "aave-abi",
  "alloy-dyn-abi",
  "alloy-json-abi",
  "alloy-primitives",
+ "alloy-sol-types",
  "clickhouse-client",
  "indexing",
  "migrations",
@@ -2065,7 +2055,7 @@ dependencies = [
 name = "indexer"
 version = "0.0.0"
 dependencies = [
- "aave-abi",
+ "aave",
  "alloy-primitives",
  "axum",
  "chain",

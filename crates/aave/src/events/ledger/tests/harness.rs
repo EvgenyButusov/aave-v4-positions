@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use units::ChainId;
 
-use crate::{ClickHouseEventLedger, Contract, DecodedEvent};
+use crate::events::{ClickHouseEventLedger, Contract, DecodedEvent};
 
 pub(super) struct Ledgers {
     client: Client,
@@ -39,7 +39,7 @@ impl Ledgers {
         Self {
             spoke: ClickHouseEventLedger::new(client.clone(), Contract::Spoke),
             hub: ClickHouseEventLedger::new(client.clone(), Contract::Hub),
-            chain_id: aave_abi::MAIN_SPOKE_ON_ETHEREUM.chain_id,
+            chain_id: crate::MAIN_SPOKE_ON_ETHEREUM.chain_id,
             client,
         }
     }

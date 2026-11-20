@@ -1,22 +1,28 @@
 [package]
-name = "aave-events"
-description = "The Aave V4 Spoke and Hub events, decoded and kept in two append-only ledgers"
+name = "aave"
+description = "The Aave V4 contracts this service follows: their ABIs, deployment, events and ledgers"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-aave-abi.workspace = true
 clickhouse-client.workspace = true
 indexing.workspace = true
 units.workspace = true
 
 alloy-dyn-abi = { version = "1.7.3", default-features = false, features = ["std"] }
 alloy-json-abi = { version = "1.7.3", default-features = false, features = ["serde_json", "std"] }
+# `Address` and `address!`, for the deployment's contracts.
 alloy-primitives = { version = "1.7.3", default-features = false, features = ["std"] }
+# `sol!` over the vendored JSON, which is what `json` enables.
+alloy-sol-types = { version = "1.7.3", default-features = false, features = ["json", "std"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.17"
+
+[build-dependencies]
+# The build script reads each vendored ABI and writes the copy `sol!` is handed.
+serde_json = "1.0.151"
 
 [dev-dependencies]
 # The schema `bins/migrate` applies, so a case's ledgers carry the fold's views as deployed.

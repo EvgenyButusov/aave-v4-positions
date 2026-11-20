@@ -55,8 +55,8 @@ fn parse(json: &str) -> JsonAbi {
     serde_json::from_str(json).expect("a vendored ABI that parses")
 }
 
-static SPOKE_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(aave_abi::spoke::ABI_JSON));
-static HUB_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(aave_abi::hub::ABI_JSON));
+static SPOKE_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(crate::abi::spoke::ABI_JSON));
+static HUB_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(crate::abi::hub::ABI_JSON));
 
 impl Contract {
     #[must_use]

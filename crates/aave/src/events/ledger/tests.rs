@@ -3,8 +3,8 @@ mod harness;
 use serde_json::Value;
 
 use super::row::Row;
-use crate::fixtures::{decoder, event, golden};
-use crate::{ClickHouseEventLedger, Contract, Error};
+use crate::events::fixtures::{decoder, event, golden};
+use crate::events::{ClickHouseEventLedger, Contract, Error};
 
 use harness::{Ledgers, at, empty_database, live, raw};
 
@@ -249,7 +249,7 @@ async fn keeps_the_hub_and_spoke_ledgers_apart_over_the_same_blocks() {
 #[tokio::test]
 async fn names_the_ledger_and_the_range_clickhouse_refused() {
     let ledger = ClickHouseEventLedger::new(empty_database("unmigrated").await, Contract::Hub);
-    let chain_id = aave_abi::MAIN_SPOKE_ON_ETHEREUM.chain_id;
+    let chain_id = crate::MAIN_SPOKE_ON_ETHEREUM.chain_id;
 
     let reverted = ledger.revert(chain_id, 1_000, 1_001).await.unwrap_err();
     let appended = ledger

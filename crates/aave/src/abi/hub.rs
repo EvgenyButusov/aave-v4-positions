@@ -3,4 +3,4 @@
 include!(concat!(env!("OUT_DIR"), "/hub_bindings.rs"));
 
 /// The vendored ABI as published, for code that reads it at runtime.
-pub const ABI_JSON: &str = include_str!("../abi/IHubV4.json");
+pub const ABI_JSON: &str = include_str!("../../abi/IHubV4.json");

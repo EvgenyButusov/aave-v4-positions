@@ -927,7 +927,7 @@ hash matches nothing, which looks exactly like a quiet chain. Every topic derive
 the catalogue in the analysis, which was extracted independently from the Solidity interfaces. It is
 the one catalog entry pinned exactly rather than caret-ranged: it is a data dependency republished
 most days, so a range would let the addresses the indexer targets change between two installs of the
-same commit. The Rust reads the same book through `crates/aave-abi`, vendored from that
+same commit. The Rust reads the same book through `crates/aave`, vendored from that
 pinned version and re-extracted by CI on every run.
 
 **Storage is append-only. There is no `DELETE` and no mutation anywhere in the package.** The table

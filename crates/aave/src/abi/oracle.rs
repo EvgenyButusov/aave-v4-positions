@@ -3,4 +3,4 @@
 include!(concat!(env!("OUT_DIR"), "/oracle_bindings.rs"));
 
 /// The vendored ABI as published, for code that reads it at runtime.
-pub const ABI_JSON: &str = include_str!("../abi/IAaveOracleV4.json");
+pub const ABI_JSON: &str = include_str!("../../abi/IAaveOracleV4.json");

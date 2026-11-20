@@ -2,15 +2,15 @@
 
 use std::sync::LazyLock;
 
-use aave_abi::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
+use crate::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
 use alloy_primitives::Address;
 use indexing::RawLog;
 use serde_json::Value;
 
-use crate::{Contract, DecodedEvent, Decoder};
+use crate::events::{Contract, DecodedEvent, Decoder};
 
 static GOLDEN: LazyLock<Value> =
-    LazyLock::new(|| serde_json::from_str(include_str!("../fixtures/golden.json")).unwrap());
+    LazyLock::new(|| serde_json::from_str(include_str!("../../fixtures/golden.json")).unwrap());
 
 /// Each captured log of `contract`'s ledger, with the row written for it.
 pub(crate) fn golden(contract: Contract) -> Vec<(RawLog, &'static Value)> {

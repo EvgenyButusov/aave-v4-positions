@@ -5,7 +5,7 @@ mod tests;
 use clickhouse_client::clickhouse::{self, Client};
 use units::ChainId;
 
-use crate::{Contract, DecodedEvent};
+use crate::events::{Contract, DecodedEvent};
 
 use row::{Row, version_now};
 

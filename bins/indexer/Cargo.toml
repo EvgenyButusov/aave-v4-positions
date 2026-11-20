@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-aave-abi.workspace = true
+aave.workspace = true
 chain.workspace = true
 clickhouse-client.workspace = true
 env.workspace = true

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::Contract;
+use crate::events::Contract;
 
 #[test]
 fn follows_each_event_once_with_a_topic_of_its_own() {

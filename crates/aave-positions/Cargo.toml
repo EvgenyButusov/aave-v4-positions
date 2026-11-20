@@ -22,6 +22,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.19"
 
 [dev-dependencies]
+# The ledgers' own write path, so a spec's rows are the ones the indexer writes.
+aave-events.workspace = true
 # The schema `bins/migrate` applies, so a spec's database is the deployment's
 # rather than a second reading of the same directories.
 migrations.workspace = true

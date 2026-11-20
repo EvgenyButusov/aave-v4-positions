@@ -1,0 +1,6 @@
+{
+  "source": "@aave-dao/aave-address-book@4.61.2",
+  "mainSpoke": "0x94e7A5dCbE816e498b89aB752661904E2F56c485",
+  "mainSpokeOracle": "0x99B2B6CEa9C3D2fd8F4d90f86741C44B212a6127",
+  "coreHub": "0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9"
+}

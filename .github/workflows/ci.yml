@@ -279,3 +279,17 @@ jobs:
 
       - name: Advisories, licences, bans and sources
         run: cargo deny check
+
+  # The other job that can fail with nothing here changed, for the same reason as
+  # `deny`: it reads a registry. It re-extracts the vendored ABIs and deployment
+  # from the pinned address book and fails on any difference, so an upstream
+  # republish under the same version, or a hand edit, is a red build.
+  abi-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The vendored ABIs are what the pinned address book publishes
+        run: ./scripts/aave-abi-drift.sh

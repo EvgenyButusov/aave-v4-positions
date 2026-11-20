@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+aave-abi.workspace = true
 chain.workspace = true
 clickhouse-client.workspace = true
 env.workspace = true
@@ -15,7 +16,7 @@ postgres.workspace = true
 telemetry.workspace = true
 units.workspace = true
 
-# `Address` for the two contracts followed, and `address!` for their defaults.
+# `Address` for the two contracts followed.
 alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
 # `serve`, for the router `ops` builds. No route of this binary's own.
 axum = "0.8.9"

@@ -10,5 +10,5 @@
 mod reader;
 mod source;
 
-pub use reader::{Env, Invalid};
+pub use reader::{Env, Invalid, Urls};
 pub use source::Source;

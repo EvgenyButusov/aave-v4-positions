@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+chain.workspace = true
 clickhouse-client.workspace = true
 env.workspace = true
 indexing.workspace = true

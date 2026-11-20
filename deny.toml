@@ -41,12 +41,13 @@ ignore = [
 ]
 
 [licenses]
-# **Four, and each one was removed in turn to check it does work.** Removing
-# `MIT` rejects 40 crates, `Unicode-3.0` 19, `Apache-2.0` and `BSD-3-Clause` one
-# each. Nothing else is needed, because an `OR` expression is satisfied by its
-# first allowed branch: this tree also carries `Apache-2.0 WITH LLVM-exception`,
-# `BSL-1.0`, `Unlicense`, `Zlib` and `LGPL-2.1-or-later`, and every crate
-# offering one of them offers `MIT` or `Apache-2.0` beside it.
+# **Each one was removed in turn to check it does work.** Removing `MIT` rejects
+# 60 crates, `Unicode-3.0` 19, `Apache-2.0` 14, `ISC` 3, `BSD-3-Clause` 2, and
+# `CDLA-Permissive-2.0` and `Zlib` one each. Nothing else is needed, because an
+# `OR` expression is satisfied by its first allowed branch: this tree also
+# carries `Apache-2.0 WITH LLVM-exception`, `BSL-1.0`, `Unlicense` and
+# `LGPL-2.1-or-later`, and every crate offering one of them offers `MIT` or
+# `Apache-2.0` beside it.
 #
 # So they are absent rather than listed, and the list is a *permission grant*
 # rather than an inventory. An entry nobody needs is invisible — adding
@@ -59,12 +60,18 @@ ignore = [
 allow = [
   "Apache-2.0",
   "BSD-3-Clause",
+  # `webpki-root-certs`, Mozilla's root list as data, under reqwest's platform verifier. `chain`
+  # hands reqwest its own TLS config, so the list is linked and never consulted.
+  "CDLA-Permissive-2.0",
   # Three crates, all under rustls, and `ring`'s is an `AND` rather than an
   # `OR`: there is no MIT branch to satisfy instead. `ring`, `rustls-webpki`
   # and `untrusted`.
   "ISC",
   "MIT",
   "Unicode-3.0",
+  # `foldhash`, which has no MIT branch, through the `map` feature `alloy-json-rpc` switches on in
+  # `alloy-primitives`.
+  "Zlib",
 ]
 
 # The eleven workspace members, which carry no `license` field. They are

@@ -4,14 +4,13 @@
 //! reading each other's telemetry. Nothing here knows what this service does —
 //! it takes a router and hands back what came out of it.
 
-use std::sync::mpsc;
-
 use axum::Router;
 use axum::body::Body;
 use axum::http::Request;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
+use test_tracing::Captured;
 use tower::ServiceExt;
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -62,53 +61,5 @@ pub(crate) fn observed(router: Router, request: Request<Body>) -> Observed {
         request_id,
         spans: exporter.get_finished_spans().unwrap(),
         logged: lines.read(),
-    }
-}
-
-/// What a subscriber wrote, where a case can read it back.
-///
-/// A channel rather than a shared buffer: a `Sender` is `Clone` and
-/// synchronised already, so this needs neither an `Arc` nor a `Mutex`.
-#[derive(Clone)]
-pub(crate) struct Captured(mpsc::Sender<Vec<u8>>);
-
-impl Captured {
-    pub(crate) fn new() -> (Self, Lines) {
-        let (sender, received) = mpsc::channel();
-
-        (Self(sender), Lines(received))
-    }
-}
-
-impl std::io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        let _ = self.0.send(buffer.to_vec());
-
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
-    type Writer = Self;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-/// The other end. [`Lines::read`] consumes it, because a channel is drained
-/// rather than re-read.
-pub(crate) struct Lines(mpsc::Receiver<Vec<u8>>);
-
-impl Lines {
-    pub(crate) fn read(self) -> String {
-        self.0
-            .try_iter()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .collect()
     }
 }

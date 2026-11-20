@@ -1165,8 +1165,10 @@ the TypeScript wrote it from viem 2.55.10: the indexed arguments first and then 
 order, since that is the order viem assigns them in; an integer of up to 48 bits as a JSON number and
 anything wider as a decimal string; addresses checksummed; a named tuple as an object. That is viem's
 generic algorithm, so the port is generic too — `alloy-dyn-abi` decodes against the vendored JSON and
-one renderer walks the values — rather than a serializer per event, and the JSON is written by hand
-because `serde_json`'s map sorts its keys without `preserve_order`. The oracle is
+one `Serialize` impl walks the values — rather than a serializer per event. It streams through
+`serde_json`'s serializer, which keeps entries in the order written and escapes strings exactly as
+`JSON.stringify` does; its `Value` map would sort the keys without `preserve_order`. No crate maps a
+`DynSolValue` to JSON, and viem's 48-bit split is its own. The oracle is
 `crates/aave/fixtures/golden.json`: the 22 decoder fixture logs, real mainnet ones and the
 flagged synthetic ones, each beside the row the TypeScript appended for it, captured once and covering
 all twenty-one followed events. Every row comes out identical. The ledger cases run against a database

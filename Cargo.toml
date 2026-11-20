@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 aave-abi = { path = "crates/aave-abi" }
+aave-events = { path = "crates/aave-events" }
 aave-positions = { path = "crates/aave-positions" }
 chain = { path = "crates/chain" }
 clickhouse-client = { path = "crates/clickhouse" }

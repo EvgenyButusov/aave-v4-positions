@@ -6,3 +6,6 @@
 )]
 
 include!(concat!(env!("OUT_DIR"), "/spoke.rs"));
+
+/// The vendored ABI, as `@aave-dao/aave-address-book` publishes it.
+pub const JSON: &str = include_str!("../abi/ISpokeV4.json");

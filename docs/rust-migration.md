@@ -258,7 +258,7 @@ graph exactly, so they stay `[[bin]]` targets of `bins/indexer`.
 | `@nestjs/platform-express` | `axum` + `tower-http` | |
 | `@nestjs/swagger` | `utoipa` + `utoipa-axum` | derive-based, and it reads doc comments — so it maps onto the *field docs* rather than onto the decorators, and `positions.dto.ts`'s 367 lines of restated shape have no counterpart. `utoipa-axum` registers a route with its documentation in one call, which is what the drift guard was going to have to check by hand. **`utoipa-swagger-ui` is not taken**: it embeds the whole 11 MB `swagger-ui-dist` to ship the 2 MB a page loads, and the image copies three files instead |
 | `zod` | hand-rolled `crates/env` | five files. Abort-on-invalid-config is preserved. **Not `serde` + `garde` + `figment`, as this row said before any of it was written**: crates.io's `crates_io_env_vars` is one reader per variable over a map, which is what a test wants and what names the one variable it refused. `Env` owns its map, so a case is `pairs.into_iter().collect()` |
-| `viem` | `alloy` | `alloy-rpc-client` and `alloy-transport-http` over reqwest, then `alloy-sol-types` for the decoders. **Not `alloy-provider`**: its network types link `k256` for signing that nothing here does, and with it `crypto-bigint`'s RUSTSEC-2026-0387 — 285 crates in `crates/chain`'s graph against 235 without it. **Not alloy's `FallbackLayer`** either, which ranks providers by latency and races the best few, where this list is a preference order |
+| `viem` | `alloy` | `alloy-rpc-client` and `alloy-transport-http` over reqwest, then `alloy-dyn-abi` for the decoders, which decode against the vendored ABI as viem's `decodeEventLog` does rather than through `sol!`'s typed events. **Not `alloy-provider`**: its network types link `k256` for signing that nothing here does, and with it `crypto-bigint`'s RUSTSEC-2026-0387 — 285 crates in `crates/chain`'s graph against 235 without it. **Not alloy's `FallbackLayer`** either, which ranks providers by latency and races the best few, where this list is a preference order |
 | `@clickhouse/client` | `clickhouse` crate | 19 call sites, all `JSONEachRow` today; inserts move to RowBinary and `JSONEachRow` stays only where a `body` column is genuinely JSON |
 | `postgres` (postgres.js) | `tokio-postgres` + `deadpool-postgres` | see [Port notes](#port-notes) |
 | `pino` + `nestjs-pino` | `tracing` + `tracing-subscriber` JSON | one JSON object per line is preserved |
@@ -1159,6 +1159,21 @@ The copy gives it its underlying `uint8`, which changes no encoding. `sol!` offe
 `ToSolConfig::one_contract`, which would have avoided it. Every topic0 in the analysis's §4 tables —
 twenty Spoke events and twelve Hub ones — is asserted against the bindings, where the TypeScript
 checked the Hub's eleven.
+
+**`crates/aave-events` third.** The decoders and the two ledgers. The ledgers' `body` column is
+what the fold's materialized views read and what the gate compares, so it is written byte for byte as
+the TypeScript wrote it from viem 2.55.10: the indexed arguments first and then the rest, each in ABI
+order, since that is the order viem assigns them in; an integer of up to 48 bits as a JSON number and
+anything wider as a decimal string; addresses checksummed; a named tuple as an object. That is viem's
+generic algorithm, so the port is generic too — `alloy-dyn-abi` decodes against the vendored JSON and
+one renderer walks the values — rather than a serializer per event, and the JSON is written by hand
+because `serde_json`'s map sorts its keys without `preserve_order`. The oracle is
+`crates/aave-events/fixtures/golden.json`: the 22 decoder fixture logs, real mainnet ones and the
+flagged synthetic ones, each beside the row the TypeScript appended for it, captured once and covering
+all twenty-one followed events. Every row comes out identical. The ledger cases run against a database
+migrated with the whole corpus rather than the ledger migrations alone, so each append also runs the
+fold's views over what it wrote — which the TypeScript specs could not, because their hand-made
+bodies would have made those views throw.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

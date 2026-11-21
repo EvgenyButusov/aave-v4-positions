@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crates/aave-abi/abi is exactly what the pinned @aave-dao/aave-address-book publishes.
+# crates/aave/abi is exactly what the pinned @aave-dao/aave-address-book publishes.
 #
 # Re-extracts from that version and fails on any difference, so an upstream change
 # is a red build rather than a silent divergence, and "taken from the address book
@@ -14,7 +14,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-readonly VENDORED=crates/aave-abi/abi
+readonly VENDORED=crates/aave/abi
 
 source=$(jq -r .source "$VENDORED/deployment.json")
 name=${source%@*}

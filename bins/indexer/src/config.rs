@@ -5,7 +5,7 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use aave_abi::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
+use aave::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
 use alloy_primitives::Address;
 use env::{Env, Invalid, Source};
 use units::ChainId;

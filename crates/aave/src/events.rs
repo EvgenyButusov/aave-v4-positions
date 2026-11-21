@@ -1,12 +1,12 @@
 //! The Aave V4 Spoke and Hub events this service follows, decoded into the shape their two
-//! append-only ledgers keep, and the ledgers themselves.
+//! append-only ledgers keep, and the port those ledgers are written through.
 
 mod contract;
 mod decode;
-#[cfg(test)]
-mod fixtures;
+#[cfg(any(test, feature = "fixtures"))]
+pub mod fixtures;
 mod ledger;
 
 pub use contract::Contract;
 pub use decode::{DecodedEvent, Decoder, Reason, Undecodable};
-pub use ledger::{ClickHouseEventLedger, Error};
+pub use ledger::{Error, EventLedger};

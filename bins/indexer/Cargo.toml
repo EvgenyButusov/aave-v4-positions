@@ -18,14 +18,22 @@ units.workspace = true
 
 # `Address` for the two contracts followed.
 alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
+async-trait = "0.1.92"
 # `serve`, for the router `ops` builds. No route of this binary's own.
 axum = "0.8.9"
 # `macros` for `#[tokio::main]` and `join!`, `net` for the listener, and
 # `rt-multi-thread` because the loop will share this runtime with the probes.
+# `Row`, the encoding a ledger append writes.
+serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = "0.1.44"
 
 [dev-dependencies]
+# The captured mainnet logs the ledger cases write.
+aave = { workspace = true, features = ["fixtures"] }
+# The schema `bins/migrate` applies, so a case's ledgers carry the fold's views as deployed.
+migrations.workspace = true
+serde_json = "1.0.151"
 test-tracing.workspace = true
 # `start_paused`, so a stall is reached by advancing the clock rather than waiting it out;
 # `io-util` and `sync` for the socket case.

@@ -1,5 +1,10 @@
 //! Real mainnet logs, each beside the row the TypeScript indexer wrote for it: see `fixtures/golden.json`.
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "a fixture compiled into the crate; a panic on it is the report"
+)]
+
 use std::sync::LazyLock;
 
 use crate::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
@@ -13,8 +18,8 @@ static GOLDEN: LazyLock<Value> =
     LazyLock::new(|| serde_json::from_str(include_str!("../../fixtures/golden.json")).unwrap());
 
 /// Each captured log of `contract`'s ledger, with the row written for it.
-pub(crate) fn golden(contract: Contract) -> Vec<(RawLog, &'static Value)> {
-    GOLDEN[contract.table().trim_end_matches("_events")]
+pub fn golden(contract: Contract) -> Vec<(RawLog, &'static Value)> {
+    GOLDEN[contract.to_string().as_str()]
         .as_array()
         .unwrap()
         .iter()
@@ -22,11 +27,11 @@ pub(crate) fn golden(contract: Contract) -> Vec<(RawLog, &'static Value)> {
         .collect()
 }
 
-pub(crate) fn decoder(contract: Contract) -> Decoder {
+pub fn decoder(contract: Contract) -> Decoder {
     Decoder::new(FOLLOWED.chain_id, contract, address(contract))
 }
 
-pub(crate) fn address(contract: Contract) -> Address {
+pub fn address(contract: Contract) -> Address {
     match contract {
         Contract::Spoke => FOLLOWED.spoke,
         Contract::Hub => FOLLOWED.hub,
@@ -34,7 +39,7 @@ pub(crate) fn address(contract: Contract) -> Address {
 }
 
 /// The captured log `event` of `contract`, decoded.
-pub(crate) fn event(contract: Contract, event: &str) -> DecodedEvent {
+pub fn event(contract: Contract, event: &str) -> DecodedEvent {
     let (log, _) = golden(contract)
         .into_iter()
         .find(|(_, row)| row["event_name"] == event)
@@ -42,7 +47,7 @@ pub(crate) fn event(contract: Contract, event: &str) -> DecodedEvent {
     decoder(contract).decode(&[log]).unwrap().remove(0)
 }
 
-pub(crate) fn raw_log(log: &Value) -> RawLog {
+pub fn raw_log(log: &Value) -> RawLog {
     let text = |key: &str| log[key].as_str().unwrap();
     let number = |key: &str| log[key].as_u64().unwrap();
 

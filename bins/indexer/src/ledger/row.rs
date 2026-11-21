@@ -1,9 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use aave::events::DecodedEvent;
 use clickhouse_client::clickhouse;
 use serde::Serialize;
-
-use crate::events::DecodedEvent;
 
 /// One row of either ledger, in the textual forms the TypeScript wrote: lower-case hex throughout.
 #[derive(clickhouse::Row, Serialize)]

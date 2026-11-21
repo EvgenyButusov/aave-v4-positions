@@ -1,13 +1,14 @@
 //! Both ledgers over a database of a case's own, migrated with the corpus `bins/migrate` applies,
 //! so every append also runs the fold's materialized views over what it wrote.
 
+use aave::events::{Contract, DecodedEvent, EventLedger as _};
 use clickhouse_client::clickhouse::{self, Client};
 use clickhouse_client::{Config, TransportSecurity, build_client};
 use serde::Deserialize;
 use serde_json::Value;
 use units::ChainId;
 
-use crate::events::{ClickHouseEventLedger, Contract, DecodedEvent};
+use crate::ledger::{ClickHouseEventLedger, table, view};
 
 pub(super) struct Ledgers {
     client: Client,
@@ -39,7 +40,7 @@ impl Ledgers {
         Self {
             spoke: ClickHouseEventLedger::new(client.clone(), Contract::Spoke),
             hub: ClickHouseEventLedger::new(client.clone(), Contract::Hub),
-            chain_id: crate::MAIN_SPOKE_ON_ETHEREUM.chain_id,
+            chain_id: aave::MAIN_SPOKE_ON_ETHEREUM.chain_id,
             client,
         }
     }
@@ -90,7 +91,7 @@ pub(super) async fn live(ledgers: &Ledgers, contract: Contract) -> Vec<Live> {
         .client
         .query(&format!(
             "SELECT block_number, log_index, event_name, body FROM {} ORDER BY block_number, log_index",
-            contract.view()
+            view(contract)
         ))
         .fetch_all::<Live>()
         .await
@@ -103,7 +104,7 @@ pub(super) async fn raw(ledgers: &Ledgers, contract: Contract) -> Vec<Value> {
         .client
         .query(&format!(
             "SELECT * FROM {} FORMAT JSONEachRow",
-            contract.table()
+            table(contract)
         ))
         .fetch_bytes("JSONEachRow")
         .unwrap();

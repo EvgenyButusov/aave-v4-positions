@@ -40,6 +40,21 @@ fn decodes_every_followed_event_of_both_contracts() {
 }
 
 #[test]
+fn renders_each_captured_log_as_the_body_the_typescript_wrote_for_it() {
+    for contract in [Contract::Spoke, Contract::Hub] {
+        for (log, written) in golden(contract) {
+            let event = decoder(contract).decode(&[log]).unwrap().remove(0);
+
+            assert_eq!(
+                event.body, written["body"],
+                "{contract} {}",
+                event.event_name
+            );
+        }
+    }
+}
+
+#[test]
 fn keeps_the_indexed_parameters_as_the_words_they_arrived_as() {
     let log = captured(Contract::Spoke, "Supply");
 

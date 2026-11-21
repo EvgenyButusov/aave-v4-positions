@@ -99,7 +99,7 @@ crates/
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
   chain/                    the JSON-RPC providers behind its two chain ports   ← new
   aave/                     vendored ABIs + sol! bindings (see Risk 1), the deployment followed,
-                            decoders, two append-only ledgers
+                            decoders, the port the two ledgers are written through
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
   prices/                   enrichment: the Spoke oracle
@@ -107,7 +107,8 @@ bins/
   migrate/                  refinery, its ClickHouse adapter, and the only
                             DDL in the system
   api/                      axum
-  indexer/                  tokio worker + probe server + five CLIs
+  indexer/                  tokio worker + probe server + five CLIs, and the ledgers'
+                            ClickHouse adapter
 ```
 
 Sixteen crates against eleven packages. `crates/chain` is one addition: the alloy adapters `indexing`
@@ -1124,7 +1125,7 @@ provider's error taxonomy, and the differential gate below.
 #### Phase 3b — the chain, and Aave ingestion
 
 The alloy adapters and provider health — **outside `crates/indexing`**, see the note under
-[Target layout](#target-layout) — then `crates/aave`: the decoders, both ledgers and the processors.
+[Target layout](#target-layout) — then `crates/aave`: the decoders, the ledger port and the processors.
 The vendored ABIs and their drift job land in it too, because the decoders are the first thing that needs
 `sol!` bindings and vendoring ABIs before anything reads them would be a copy nothing checks.
 
@@ -1159,7 +1160,8 @@ The copy gives it its underlying `uint8`, which changes no encoding. `sol!` offe
 twenty Spoke events and twelve Hub ones — is asserted against the bindings, where the TypeScript
 checked the Hub's eleven.
 
-**Its events third.** The decoders and the two ledgers. The ledgers' `body` column is
+**Its events third.** The decoders, and `EventLedger`, the port the two ledgers are written
+through; `bins/indexer` holds its ClickHouse adapter. The ledgers' `body` column is
 what the fold's materialized views read and what the gate compares, so it is written byte for byte as
 the TypeScript wrote it from viem 2.55.10: the indexed arguments first and then the rest, each in ABI
 order, since that is the order viem assigns them in; an integer of up to 48 bits as a JSON number and
@@ -1176,10 +1178,11 @@ migrated with the whole corpus rather than the ledger migrations alone, so each 
 fold's views over what it wrote — which the TypeScript specs could not, because their hand-made
 bodies would have made those views throw.
 
-The ABIs and the events are one crate. The ABIs' second consumer will be the oracle read in `prices`,
-which `bins/api` links; that is when to split them again, if the API should not link the ledgers
-with them. Measured as two crates: rebuilding the ABI half took 4.2s, almost all of it `sol!`
-expanding three ABIs, against 1.3s for the events half, so an edit to a decoder now pays for both.
+The ABIs and the events are one crate, and it holds no storage: the binary that composes the
+ledgers owns their adapter, so a crate linking `aave` for the bindings links no ClickHouse. It does
+still link Postgres, through `indexing`, for `RawLog` alone. Measured as two crates: rebuilding the
+ABI half took 4.2s, almost all of it `sol!` expanding three ABIs, against 1.3s for the events half,
+so an edit to a decoder now pays for both.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

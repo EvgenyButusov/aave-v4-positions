@@ -6,89 +6,39 @@
 //! Seeded through the fold, not around it: these append decoded events and let
 //! the materialized views do the work, so the specs are store specs rather
 //! than assertions about a hand-written table.
-//!
-//! The write path is reproduced rather than imported, because the event ledgers
-//! belong to a crate that does not exist yet.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use clickhouse_client::clickhouse::{self, Client};
+use aave_events::{ClickHouseEventLedger, Contract, DecodedEvent};
+use alloy_primitives::{B256, Bytes};
+use clickhouse_client::clickhouse::Client;
 use clickhouse_client::{Config, build_client};
-use serde::Serialize;
 
 use super::ClickHousePositionStore;
 use crate::store::fixtures::{CHAIN_ID, Event};
 
-/// One row of either ledger; both have the same shape.
-#[derive(clickhouse::Row, Serialize)]
-struct LedgerRow<'a> {
-    chain_id: u64,
-    address: String,
-    block_number: u64,
-    log_index: u32,
-    version: u64,
-    block_hash: &'a str,
-    block_timestamp: u32,
-    tx_hash: &'a str,
-    tx_index: u32,
-    event_name: &'a str,
-    topic1: Option<&'a str>,
-    topic2: Option<&'a str>,
-    topic3: Option<&'a str>,
-    body: &'a str,
-    data: &'a str,
-    sign: i8,
-}
-
-/// One stamp per batch — half of the ledger's pairing key, so a row needs one
-/// even where nothing here writes the other half.
-fn next_version() -> u64 {
-    static VERSION: AtomicU64 = AtomicU64::new(0);
-
-    VERSION
-        .fetch_add(1, Ordering::Relaxed)
-        .saturating_add(seconds_now().saturating_mul(1_000))
-}
-
-fn seconds_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs())
-}
-
-pub(super) async fn append(client: &Client, table: &str, events: &[Event]) {
-    if events.is_empty() {
-        return;
+// The projections read every field out of `body`, so the hashes and topics stay placeholders.
+fn decoded(event: &Event) -> DecodedEvent {
+    DecodedEvent {
+        chain_id: CHAIN_ID,
+        address: event.address,
+        block_number: event.at.block,
+        block_hash: B256::repeat_byte(0xaa),
+        block_timestamp: event.timestamp,
+        transaction_hash: B256::repeat_byte(0xbb),
+        transaction_index: 0,
+        log_index: event.at.log,
+        event_name: event.name,
+        topics: [None; 3],
+        body: event.body.clone(),
+        data: Bytes::new(),
     }
+}
 
-    let version = next_version();
-    let mut insert = client.insert::<LedgerRow<'_>>(table).await.unwrap();
-    for event in events {
-        insert
-            .write(&LedgerRow {
-                chain_id: u64::from(CHAIN_ID),
-                address: event.address.to_string().to_lowercase(),
-                block_number: event.at.block,
-                log_index: event.at.log,
-                version,
-                block_hash: "0xaaaa",
-                block_timestamp: event.timestamp,
-                tx_hash: "0xbbbb",
-                tx_index: 0,
-                event_name: event.name,
-                // The projections read every field out of `body`.
-                topic1: None,
-                topic2: None,
-                topic3: None,
-                body: &event.body,
-                data: "0x",
-                sign: 1,
-            })
-            .await
-            .unwrap();
-    }
-    insert.end().await.unwrap();
+pub(super) async fn append(client: &Client, contract: Contract, events: &[Event]) {
+    let events: Vec<DecodedEvent> = events.iter().map(decoded).collect();
+    ClickHouseEventLedger::new(client.clone(), contract)
+        .append(&events)
+        .await
+        .unwrap();
 }
 
 fn config(database: &str) -> Config {
@@ -146,5 +96,5 @@ pub(super) async fn store(test: &str) -> (ClickHousePositionStore, Client) {
 /// A dispatched range, as the processor leaves it. Append only: every test
 /// reads a database created empty, so a retraction has nothing to cancel.
 pub(super) async fn index(client: &Client, batch: &[Event]) {
-    append(client, "spoke_events", batch).await;
+    append(client, Contract::Spoke, batch).await;
 }

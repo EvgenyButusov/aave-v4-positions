@@ -22,6 +22,7 @@ dependencies = [
 name = "aave-positions"
 version = "0.0.0"
 dependencies = [
+ "aave-events",
  "alloy-primitives",
  "async-trait",
  "clickhouse-client",

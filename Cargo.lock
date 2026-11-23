@@ -3,30 +3,18 @@
 version = 4
 
 [[package]]
-name = "aave-abi"
+name = "aave"
 version = "0.0.0"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "serde_json",
- "units",
-]
-
-[[package]]
-name = "aave-events"
-version = "0.0.0"
-dependencies = [
- "aave-abi",
  "alloy-dyn-abi",
  "alloy-json-abi",
  "alloy-primitives",
- "clickhouse-client",
+ "alloy-sol-types",
+ "async-trait",
  "indexing",
- "migrations",
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
  "units",
 ]
 
@@ -34,7 +22,6 @@ dependencies = [
 name = "aave-positions"
 version = "0.0.0"
 dependencies = [
- "aave-events",
  "alloy-primitives",
  "async-trait",
  "clickhouse-client",
@@ -2066,15 +2053,19 @@ dependencies = [
 name = "indexer"
 version = "0.0.0"
 dependencies = [
- "aave-abi",
+ "aave",
  "alloy-primitives",
+ "async-trait",
  "axum",
  "chain",
  "clickhouse-client",
  "env",
  "indexing",
+ "migrations",
  "ops",
  "postgres",
+ "serde",
+ "serde_json",
  "telemetry",
  "test-tracing",
  "tokio",

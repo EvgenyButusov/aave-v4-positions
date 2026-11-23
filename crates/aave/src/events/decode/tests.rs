@@ -4,8 +4,8 @@ use alloy_primitives::{Address, B256, Bytes, I256};
 use serde_json::Value;
 
 use super::body;
-use crate::fixtures::{address, decoder, golden};
-use crate::{Contract, Reason};
+use crate::events::fixtures::{address, decoder, golden};
+use crate::events::{Contract, Reason};
 
 fn refusal(contract: Contract, log: indexing::RawLog) -> Reason {
     decoder(contract).decode(&[log]).unwrap_err().reason
@@ -36,6 +36,21 @@ fn decodes_every_followed_event_of_both_contracts() {
         followed.sort_unstable();
 
         assert_eq!(decoded, followed, "{contract}");
+    }
+}
+
+#[test]
+fn renders_each_captured_log_as_the_body_the_typescript_wrote_for_it() {
+    for contract in [Contract::Spoke, Contract::Hub] {
+        for (log, written) in golden(contract) {
+            let event = decoder(contract).decode(&[log]).unwrap().remove(0);
+
+            assert_eq!(
+                event.body, written["body"],
+                "{contract} {}",
+                event.event_name
+            );
+        }
     }
 }
 
@@ -177,7 +192,8 @@ fn renders_an_event_with_an_unnamed_argument_as_an_array_in_abi_order() {
 
 #[test]
 fn renders_the_types_no_followed_event_carries_as_viem_did() {
-    let shapes: Value = serde_json::from_str(include_str!("../../fixtures/shapes.json")).unwrap();
+    let shapes: Value =
+        serde_json::from_str(include_str!("../../../fixtures/shapes.json")).unwrap();
     let event: Event = serde_json::from_value(shapes["event"].clone()).unwrap();
     let topics: Vec<B256> = serde_json::from_value(shapes["topics"].clone()).unwrap();
     let data: Bytes = shapes["data"].as_str().unwrap().parse().unwrap();

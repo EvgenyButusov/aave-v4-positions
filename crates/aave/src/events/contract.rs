@@ -55,8 +55,8 @@ fn parse(json: &str) -> JsonAbi {
     serde_json::from_str(json).expect("a vendored ABI that parses")
 }
 
-static SPOKE_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(aave_abi::spoke::JSON));
-static HUB_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(aave_abi::hub::JSON));
+static SPOKE_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(crate::abi::spoke::ABI_JSON));
+static HUB_ABI: LazyLock<JsonAbi> = LazyLock::new(|| parse(crate::abi::hub::ABI_JSON));
 
 impl Contract {
     #[must_use]
@@ -88,21 +88,6 @@ impl Contract {
 
     pub(crate) fn follows(self, event: &str) -> bool {
         self.events().contains(&event)
-    }
-
-    pub(crate) fn table(self) -> &'static str {
-        match self {
-            Self::Spoke => "spoke_events",
-            Self::Hub => "hub_events",
-        }
-    }
-
-    /// Every read goes through this: an unpaired retraction is still visible in the table.
-    pub(crate) fn view(self) -> &'static str {
-        match self {
-            Self::Spoke => "spoke_events_current",
-            Self::Hub => "hub_events_current",
-        }
     }
 }
 

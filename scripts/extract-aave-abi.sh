@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Writes what crates/aave-abi vendors from an unpacked @aave-dao/aave-address-book,
+# Writes what crates/aave vendors from an unpacked @aave-dao/aave-address-book,
 # reading it as text rather than running it:
 #
 #   ./scripts/extract-aave-abi.sh <package dir> <out dir>

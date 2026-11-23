@@ -10,7 +10,7 @@ use alloy_primitives::{Address, B256, Bytes};
 use indexing::RawLog;
 use units::ChainId;
 
-use crate::Contract;
+use crate::events::Contract;
 
 /// One log as its ledger keeps it: the envelope, the indexed parameters as the words they arrived
 /// as, every argument as JSON, and the raw data, so a decoder bug is repaired by re-decoding what is

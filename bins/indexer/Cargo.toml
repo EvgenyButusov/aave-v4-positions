@@ -34,6 +34,8 @@ tokio-util = { version = "0.7.19", default-features = false }
 [dev-dependencies]
 # The captured mainnet logs a processor case is served.
 aave = { workspace = true, features = ["fixtures"] }
+# A migrated schema per case, for the iterations a pipeline case runs.
+test-db.workspace = true
 test-tracing.workspace = true
 # `start_paused`, so a stall is reached by advancing the clock rather than waiting it out;
 # `io-util` and `sync` for the socket case.

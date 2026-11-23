@@ -4,6 +4,7 @@
 //! then the loop, which gets [`SHUTDOWN_DRAIN`] to finish its iteration.
 
 mod config;
+mod contracts;
 mod pipeline;
 mod probes;
 mod processor;
@@ -14,12 +15,12 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use indexing::{Indexer, IndexerStatus, SHUTDOWN_DRAIN};
+use aave_clickhouse::ClickHouseEventLedger;
+use chain::JsonRpc;
+use indexing::{Indexer, LogReader, SHUTDOWN_DRAIN};
 use ops::{ShutdownFlag, Uptime};
-use tokio_util::sync::CancellationToken;
 
 use config::Config;
-use pipeline::Stores;
 use stall::Stall;
 
 #[tokio::main]
@@ -62,18 +63,22 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     );
 
     let clickhouse = clickhouse_client::build_client(config.clickhouse.clone())?;
-    let status = Arc::new(IndexerStatus::new());
-    let cancel = CancellationToken::new();
-    let mut indexer = Indexer::new(pipeline::assemble(
-        &config,
-        Stores {
-            clickhouse: clickhouse.clone(),
-            postgres: postgres::build_pool(&config.postgres_url, config.postgres_limits)?,
-        },
-        &opentelemetry::global::meter(telemetry::SCOPE),
-        Arc::clone(&status),
-        cancel.clone(),
-    )?);
+    let meter = opentelemetry::global::meter(telemetry::SCOPE);
+    let chain = Arc::new(JsonRpc::connect(&config.rpc, &meter)?);
+    let logs: Arc<dyn LogReader> = Arc::clone(&chain) as _;
+    let pipeline = pipeline::assemble(
+        config.chain,
+        config.finality_depth,
+        chain,
+        postgres::build_pool(&config.postgres_url, config.postgres_limits)?,
+        contracts::processors(&config, &logs, |contract| {
+            Box::new(ClickHouseEventLedger::new(clickhouse.clone(), contract))
+        }),
+        &meter,
+    );
+    let status = Arc::clone(&pipeline.status);
+    let cancel = pipeline.cancel.clone();
+    let mut indexer = Indexer::new(pipeline);
     let indexing = if config.autostart {
         Some(tokio::spawn(async move { indexer.run().await }))
     } else {
@@ -123,6 +128,7 @@ mod tests {
 
     use std::time::Duration;
 
+    use indexing::IndexerStatus;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;

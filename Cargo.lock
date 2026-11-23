@@ -2082,6 +2082,7 @@ dependencies = [
  "ops",
  "postgres",
  "telemetry",
+ "test-db",
  "test-tracing",
  "tokio",
  "tokio-util",

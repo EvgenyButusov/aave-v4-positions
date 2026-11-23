@@ -14,5 +14,5 @@ docs/
 # target/debug/.fingerprint is nothing but.
 target/
 
-# Written by scripts/extract-aave-abi.mjs, and compared with its output byte for byte in CI.
-crates/aave-abi/abi/
+# Written by scripts/extract-aave-abi.sh, and compared with its output byte for byte in CI.
+crates/aave/abi/

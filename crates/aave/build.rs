@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let repaired = out.join(format!("{interface}.json"));
         fs::write(&repaired, serde_json::to_string(&abi)?)?;
         fs::write(
-            out.join(format!("{module}.rs")),
+            out.join(format!("{module}_bindings.rs")),
             format!("alloy_sol_types::sol!(#[sol(all_derives)] {interface}, {repaired:?});\n"),
         )?;
     }

@@ -1187,6 +1187,17 @@ still link Postgres, through `indexing`, for `RawLog` alone. Measured as two cra
 ABI half took 4.2s, almost all of it `sol!` expanding three ABIs, against 1.3s for the events half,
 so an edit to a decoder now pays for both.
 
+**The processors and the loop fourth.** One `AaveEventProcessor` per followed contract, in
+`bins/indexer`: it asks for that contract's followed topics over the dispatched range, decodes them,
+and reverts then appends through the ledger port. A provider refusing the width asks the loop to
+narrow; a log that will not decode stops indexing, because the provider was asked for exactly those
+topics; an unreachable chain or a refused write is handed back for a retry of the same range; once
+shutdown has begun nothing is written. `main.rs` composes them over one `JsonRpc`, shared by the
+loop, the detector and both processors, with the cursor and header window in Postgres, and starts
+the loop unless `AUTOSTART` is false. Shutdown stops the listener, then cancels the loop and gives
+it `SHUTDOWN_DRAIN` to finish its iteration. Not here: the token-enrichment processor and the Hub's
+hand-off of newly listed tokens to it, which arrive with enrichment in Phase 4.
+
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,
 `hub_events_current`, `user_positions_current` and `hub_assets_current` at the same block. Zero rows

@@ -38,7 +38,7 @@ impl Config {
         Self::parse(&Source::from_env().read(env!("CARGO_MANIFEST_DIR")))
     }
 
-    fn parse(env: &Env) -> Result<Self, Invalid> {
+    pub(crate) fn parse(env: &Env) -> Result<Self, Invalid> {
         Ok(Self {
             telemetry: telemetry::Settings::read(env)?,
             host: env.address("HOST", "0.0.0.0")?,

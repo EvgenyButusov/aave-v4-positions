@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 aave.workspace = true
+aave-clickhouse.workspace = true
 chain.workspace = true
 clickhouse-client.workspace = true
 env.workspace = true
@@ -18,14 +19,21 @@ units.workspace = true
 
 # `Address` for the two contracts followed.
 alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
+async-trait = "0.1.92"
 # `serve`, for the router `ops` builds. No route of this binary's own.
 axum = "0.8.9"
+# The meter the chain client and the loop's instruments register on.
+opentelemetry = { version = "0.31.0", default-features = false, features = ["metrics"] }
 # `macros` for `#[tokio::main]` and `join!`, `net` for the listener, and
 # `rt-multi-thread` because the loop will share this runtime with the probes.
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = "0.1.44"
+# The token the loop and its processors are cancelled through.
+tokio-util = { version = "0.7.19", default-features = false }
 
 [dev-dependencies]
+# The captured mainnet logs a processor case is served.
+aave = { workspace = true, features = ["fixtures"] }
 test-tracing.workspace = true
 # `start_paused`, so a stall is reached by advancing the clock rather than waiting it out;
 # `io-util` and `sync` for the socket case.

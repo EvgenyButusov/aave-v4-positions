@@ -84,6 +84,7 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let probes = probes::dependencies(
         Stall::new(status, config.stall_threshold),
         clickhouse,
+        // Not a clone of the loop's pool: a probe queued behind it reports a busy database as down.
         postgres::probe_pool(&config.postgres_url, config.postgres_limits)?,
     );
 

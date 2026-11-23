@@ -100,6 +100,7 @@ crates/
   chain/                    the JSON-RPC providers behind its two chain ports   ← new
   aave/                     vendored ABIs + sol! bindings (see Risk 1), the deployment followed,
                             decoders, the port the two ledgers are written through
+  aave-clickhouse/          the ClickHouse adapter behind that port   ← new
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
   prices/                   enrichment: the Spoke oracle
@@ -107,11 +108,10 @@ bins/
   migrate/                  refinery, its ClickHouse adapter, and the only
                             DDL in the system
   api/                      axum
-  indexer/                  tokio worker + probe server + five CLIs, and the ledgers'
-                            ClickHouse adapter
+  indexer/                  tokio worker + probe server + five CLIs
 ```
 
-Sixteen crates against eleven packages. `crates/chain` is one addition: the alloy adapters `indexing`
+Seventeen crates against eleven packages. `crates/chain` is one addition: the alloy adapters `indexing`
 may not hold, for the reason four paragraphs below.
 `crates/test-db` is another, and the note below says why it is a crate rather than a module.
 `crates/test-tracing` is a third: seven crates' suites read back what a scoped subscriber saw, through
@@ -120,6 +120,9 @@ one `Captured` writer, and most need the same workaround for
 interest from whichever thread reaches it first while only one dispatcher is registered. No crate
 they share could hold either: `clickhouse`, `postgres` and `indexing` do not link `telemetry`, and
 `test-db` is a database. The workaround goes when the upstream fix does; the writer stays.
+`crates/aave-clickhouse` is a fourth: the ledgers' ClickHouse adapter, kept out of `aave` so that
+linking the bindings links no storage, and out of `bins/indexer` so that `aave-positions`' store
+suites can seed the fold through it.
 
 The `indexing/` line lost its alloy adapters: the ports, the loop and the durable stores are inside
 that crate and the adapters are not, for the reason four paragraphs below. Phase 3a is where that
@@ -1161,7 +1164,7 @@ twenty Spoke events and twelve Hub ones — is asserted against the bindings, wh
 checked the Hub's eleven.
 
 **Its events third.** The decoders, and `EventLedger`, the port the two ledgers are written
-through; `bins/indexer` holds its ClickHouse adapter. The ledgers' `body` column is
+through; `crates/aave-clickhouse` holds its ClickHouse adapter. The ledgers' `body` column is
 what the fold's materialized views read and what the gate compares, so it is written byte for byte as
 the TypeScript wrote it from viem 2.55.10: the indexed arguments first and then the rest, each in ABI
 order, since that is the order viem assigns them in; an integer of up to 48 bits as a JSON number and
@@ -1178,8 +1181,8 @@ migrated with the whole corpus rather than the ledger migrations alone, so each 
 fold's views over what it wrote — which the TypeScript specs could not, because their hand-made
 bodies would have made those views throw.
 
-The ABIs and the events are one crate, and it holds no storage: the binary that composes the
-ledgers owns their adapter, so a crate linking `aave` for the bindings links no ClickHouse. It does
+The ABIs and the events are one crate, and it holds no storage: the ledgers' adapter is
+`crates/aave-clickhouse`, so a crate linking `aave` for the bindings links no ClickHouse. It does
 still link Postgres, through `indexing`, for `RawLog` alone. Measured as two crates: rebuilding the
 ABI half took 4.2s, almost all of it `sol!` expanding three ABIs, against 1.3s for the events half,
 so an edit to a decoder now pays for both.

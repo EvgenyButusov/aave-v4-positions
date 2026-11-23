@@ -109,7 +109,7 @@ fn now() -> u64 {
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
-    use aave_events::Contract;
+    use aave::events::Contract;
     use alloy_primitives::I256;
     use clickhouse_client::clickhouse::Client;
 

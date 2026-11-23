@@ -7,7 +7,8 @@
 //! the materialized views do the work, so the specs are store specs rather
 //! than assertions about a hand-written table.
 
-use aave_events::{ClickHouseEventLedger, Contract, DecodedEvent};
+use aave::events::{Contract, DecodedEvent, EventLedger as _};
+use aave_clickhouse::ClickHouseEventLedger;
 use alloy_primitives::{B256, Bytes};
 use clickhouse_client::clickhouse::Client;
 use clickhouse_client::{Config, build_client};

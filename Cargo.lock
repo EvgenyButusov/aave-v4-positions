@@ -19,9 +19,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aave-clickhouse"
+version = "0.0.0"
+dependencies = [
+ "aave",
+ "async-trait",
+ "clickhouse-client",
+ "migrations",
+ "serde",
+ "serde_json",
+ "tokio",
+ "units",
+]
+
+[[package]]
 name = "aave-positions"
 version = "0.0.0"
 dependencies = [
+ "aave",
+ "aave-clickhouse",
  "alloy-primitives",
  "async-trait",
  "clickhouse-client",
@@ -2055,17 +2071,13 @@ version = "0.0.0"
 dependencies = [
  "aave",
  "alloy-primitives",
- "async-trait",
  "axum",
  "chain",
  "clickhouse-client",
  "env",
  "indexing",
- "migrations",
  "ops",
  "postgres",
- "serde",
- "serde_json",
  "telemetry",
  "test-tracing",
  "tokio",

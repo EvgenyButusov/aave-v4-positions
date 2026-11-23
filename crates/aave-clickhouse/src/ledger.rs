@@ -17,13 +17,14 @@ const COLUMNS: &str = "chain_id, address, block_number, log_index, block_hash, b
 /// A range is emptied by inserting the negation of its live rows, never by a `DELETE`. The engine
 /// collapses no repeated insert on its own, which is why the port asks for a revert first.
 #[derive(Clone)]
-pub(crate) struct ClickHouseEventLedger {
+pub struct ClickHouseEventLedger {
     client: Client,
     contract: Contract,
 }
 
 impl ClickHouseEventLedger {
-    pub(crate) fn new(client: Client, contract: Contract) -> Self {
+    #[must_use]
+    pub fn new(client: Client, contract: Contract) -> Self {
         Self { client, contract }
     }
 

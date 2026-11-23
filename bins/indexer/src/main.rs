@@ -4,14 +4,6 @@
 //! a cursor advanced with nothing to process would pass every event below it unread.
 
 mod config;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the event processors, the next change, write through it"
-    )
-)]
-mod ledger;
 mod probes;
 mod stall;
 

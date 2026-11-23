@@ -109,6 +109,7 @@ fn now() -> u64 {
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
+    use aave::events::Contract;
     use alloy_primitives::I256;
     use clickhouse_client::clickhouse::Client;
 
@@ -172,13 +173,13 @@ mod tests {
                     ));
                 }
             }
-            append(&self.client, "spoke_events", &events).await;
+            append(&self.client, Contract::Spoke, &events).await;
         }
 
         async fn given_checkpoint(&self, asset_id: &str, at: u64, drawn_index: &str) {
             append(
                 &self.client,
-                "hub_events",
+                Contract::Hub,
                 &[update_asset(
                     At::block(at.saturating_sub(T0)),
                     asset_id,
@@ -193,7 +194,7 @@ mod tests {
             let block = listed.checkpoint_at.saturating_sub(T0);
             append(
                 &self.client,
-                "hub_events",
+                Contract::Hub,
                 &[
                     add_asset(
                         At::block(10),
@@ -209,7 +210,7 @@ mod tests {
             .await;
             append(
                 &self.client,
-                "spoke_events",
+                Contract::Spoke,
                 &[add_reserve(
                     At::block(10).on(listed.spoke),
                     listed.reserve_id,
@@ -301,7 +302,7 @@ mod tests {
             let (store, client) = store("unregistered").await;
             append(
                 &client,
-                "spoke_events",
+                Contract::Spoke,
                 &[supply(At::block(200), ALICE, "99", "1000")],
             )
             .await;

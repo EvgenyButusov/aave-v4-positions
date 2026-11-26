@@ -5,11 +5,10 @@ mod tests;
 
 use std::sync::Arc;
 
-use aave::events::{Contract, EventLedger};
+use aave::events::{AaveEventProcessor, Contract, EventLedger};
 use indexing::{BlockProcessor, LogReader};
 
 use crate::config::Config;
-use crate::processor::AaveEventProcessor;
 
 pub(crate) fn processors(
     config: &Config,

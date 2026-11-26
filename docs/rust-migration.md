@@ -99,7 +99,8 @@ crates/
   indexing/                 loop, ports, reorg, cursor, backfill — no chain
   chain/                    the JSON-RPC providers behind its two chain ports   ← new
   aave/                     vendored ABIs + sol! bindings (see Risk 1), the deployment followed,
-                            decoders, the port the two ledgers are written through
+                            decoders, the port the two ledgers are written through, and the
+                            processor that reads a range into one
   aave-clickhouse/          the ClickHouse adapter behind that port   ← new
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
@@ -1188,15 +1189,17 @@ ABI half took 4.2s, almost all of it `sol!` expanding three ABIs, against 1.3s f
 so an edit to a decoder now pays for both.
 
 **The processors and the loop fourth.** One `AaveEventProcessor` per followed contract, in
-`bins/indexer`: it asks for that contract's followed topics over the dispatched range, decodes them,
-and reverts then appends through the ledger port. A provider refusing the width asks the loop to
-narrow; a log that will not decode stops indexing, because the provider was asked for exactly those
-topics; an unreachable chain or a refused write is handed back for a retry of the same range; once
-shutdown has begun nothing is written. `main.rs` composes them over one `JsonRpc`, shared by the
-loop, the detector and both processors, with the cursor and header window in Postgres, and starts
-the loop unless `AUTOSTART` is false. Shutdown stops the listener, then cancels the loop and gives
-it `SHUTDOWN_DRAIN` to finish its iteration. Not here: the token-enrichment processor and the Hub's
-hand-off of newly listed tokens to it, which arrive with enrichment in Phase 4.
+`crates/aave` beside the ports it is written against, `LogReader` and `EventLedger`: it asks for
+that contract's followed topics over the dispatched range, decodes them, and reverts then appends
+through the ledger port. A provider refusing the width asks the loop to narrow; a log that will not
+decode stops indexing, because the provider was asked for exactly those topics; an unreachable chain
+or a refused write is handed back for a retry of the same range; once shutdown has begun nothing is
+written. `bins/indexer` only constructs: `main.rs` names the implementations, one `JsonRpc` shared by
+the loop, the detector and both processors and a `ClickHouseEventLedger` per contract;
+`contracts.rs` lists the contracts followed; `pipeline.rs` puts the cursor and header window in
+Postgres. The loop starts unless `AUTOSTART` is false. Shutdown stops the listener, then cancels the
+loop and gives it `SHUTDOWN_DRAIN` to finish its iteration. Not here: the token-enrichment processor
+and the Hub's hand-off of newly listed tokens to it, which arrive with enrichment in Phase 4.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
 TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,

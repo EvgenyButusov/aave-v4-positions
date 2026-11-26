@@ -23,6 +23,13 @@ async-trait = "0.1.92"
 serde = "1.0.228"
 serde_json = "1.0.151"
 thiserror = "2.0.17"
+# The token the loop cancels a processor through.
+tokio-util = { version = "0.7.19", default-features = false }
+tracing = "0.1.44"
+
+[dev-dependencies]
+# `#[tokio::test]`, for the processor's cases.
+tokio = { version = "1.53.1", features = ["macros", "rt"] }
 
 [build-dependencies]
 # The build script reads each vendored ABI and writes the copy `sol!` is handed.

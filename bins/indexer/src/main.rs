@@ -7,7 +7,6 @@ mod config;
 mod contracts;
 mod pipeline;
 mod probes;
-mod processor;
 mod stall;
 
 use std::error::Error;

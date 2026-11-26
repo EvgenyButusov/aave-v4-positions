@@ -3,16 +3,17 @@ mod tests;
 
 use std::sync::Arc;
 
-use aave::events::{Contract, Decoder, EventLedger};
 use alloy_primitives::{Address, B256};
 use async_trait::async_trait;
 use indexing::{BlockProcessor, ChainError, Failure, LogFilter, LogReader, Outcome};
 use tokio_util::sync::CancellationToken;
 use units::ChainId;
 
+use crate::events::{Contract, Decoder, EventLedger};
+
 /// Reads one contract's followed events over the dispatched range and writes them to its ledger.
 /// A second Spoke is a second processor with its own address and ledger.
-pub(crate) struct AaveEventProcessor {
+pub struct AaveEventProcessor {
     name: String,
     chain_id: ChainId,
     address: Address,
@@ -23,7 +24,8 @@ pub(crate) struct AaveEventProcessor {
 }
 
 impl AaveEventProcessor {
-    pub(crate) fn new(
+    #[must_use]
+    pub fn new(
         chain_id: ChainId,
         contract: Contract,
         address: Address,

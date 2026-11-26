@@ -19,7 +19,6 @@ units.workspace = true
 
 # `Address` for the two contracts followed.
 alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
-async-trait = "0.1.92"
 # `serve`, for the router `ops` builds. No route of this binary's own.
 axum = "0.8.9"
 # The meter the chain client and the loop's instruments register on.
@@ -32,8 +31,8 @@ tracing = "0.1.44"
 tokio-util = { version = "0.7.19", default-features = false }
 
 [dev-dependencies]
-# The captured mainnet logs a processor case is served.
-aave = { workspace = true, features = ["fixtures"] }
+# The chain, processors and ledgers a pipeline or contracts case fakes.
+async-trait = "0.1.92"
 # A migrated schema per case, for the iterations a pipeline case runs.
 test-db.workspace = true
 test-tracing.workspace = true

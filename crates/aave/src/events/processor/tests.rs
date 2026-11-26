@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use aave::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
-use aave::events::fixtures::{address, golden};
-use aave::events::{Contract, DecodedEvent, Error as LedgerError, EventLedger};
 use async_trait::async_trait;
 use indexing::{BlockProcessor as _, ChainError, LogFilter, LogReader, Outcome, RawLog};
 use tokio_util::sync::CancellationToken;
 use units::ChainId;
 
 use super::AaveEventProcessor;
+use crate::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
+use crate::events::fixtures::{address, decoder, golden};
+use crate::events::{Contract, DecodedEvent, Error as LedgerError, EventLedger};
 
 enum Serves {
     Logs(Vec<RawLog>),
@@ -146,7 +146,7 @@ async fn retracts_the_range_then_appends_what_it_decoded() {
 
     let outcome = case.index(1_000, 1_999).await.unwrap();
 
-    let names: Vec<_> = aave::events::fixtures::decoder(Contract::Hub)
+    let names: Vec<_> = decoder(Contract::Hub)
         .decode(&logs)
         .unwrap()
         .into_iter()

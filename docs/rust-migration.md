@@ -1195,8 +1195,8 @@ through the ledger port. A provider refusing the width asks the loop to narrow; 
 decode stops indexing, because the provider was asked for exactly those topics; an unreachable chain
 or a refused write is handed back for a retry of the same range; once shutdown has begun nothing is
 written. `bins/indexer` only constructs: `main.rs` names the implementations, one `JsonRpc` shared by
-the loop, the detector and both processors and a `ClickHouseEventLedger` per contract;
-`contracts.rs` lists the contracts followed; `pipeline.rs` puts the cursor and header window in
+the loop, the detector and both processors and a `ClickHouseEventLedger` per contract, over the
+contracts `Config` lists; `pipeline.rs` puts the cursor and header window in
 Postgres. The loop starts unless `AUTOSTART` is false. Shutdown stops the listener, then cancels the
 loop and gives it `SHUTDOWN_DRAIN` to finish its iteration. Not here: the token-enrichment processor
 and the Hub's hand-off of newly listed tokens to it, which arrive with enrichment in Phase 4.

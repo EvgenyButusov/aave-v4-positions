@@ -31,7 +31,7 @@ tracing = "0.1.44"
 tokio-util = { version = "0.7.19", default-features = false }
 
 [dev-dependencies]
-# The chain, processors and ledgers a pipeline or contracts case fakes.
+# The chain and processors a pipeline case fakes.
 async-trait = "0.1.92"
 # A migrated schema per case, for the iterations a pipeline case runs.
 test-db.workspace = true

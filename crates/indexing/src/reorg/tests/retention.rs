@@ -1,17 +1,42 @@
 use crate::fixtures::{CHAIN_ID, hash_of};
-use crate::reorg::harness::{DEPTH, HEAD, harness};
+use crate::reorg::harness::{DEPTH, HEAD, cursor_at, harness};
 use crate::reorg::{BlockHeaderStore as _, ReorgDetector};
 
+// A gap is unwalkable: a header read by height across it is the winning branch, which matches
+// itself, is named the common ancestor, and under-reports the fork.
 #[tokio::test]
-async fn leaves_no_gap_however_the_ranges_land() {
-    let fixture = harness(DEPTH).await;
+async fn leaves_no_gap_whatever_the_loop_does_to_the_window() {
+    let fixture = harness(5).await;
+    let contiguous = async |shape: &str| {
+        let retained = fixture.retained().await;
+        let gaps = retained.windows(2).any(|pair| pair[1] != pair[0] + 1);
+        assert!(!gaps, "{shape}: {retained:?}");
+    };
 
-    fixture.commit([HEAD - 40, HEAD - 20, HEAD - 1, HEAD]).await;
-
-    let retained = fixture.retained().await;
-    let contiguous = retained.windows(2).all(|pair| pair[1] == pair[0] + 1);
-
-    assert!(contiguous, "{retained:?}");
+    fixture.commit([900, 901, 902]).await;
+    contiguous("extending").await;
+    fixture.commit([950, 951, 951, 940]).await;
+    contiguous("jumping forward, re-committing, jumping back").await;
+    fixture.detector.rewind_to(Some(938)).await.unwrap();
+    fixture.commit([939]).await;
+    contiguous("committing after a rewind").await;
+    fixture.detector.rewind_to(None).await.unwrap();
+    fixture.commit([996]).await;
+    contiguous("committing onto an emptied window").await;
+    fixture
+        .detector
+        .bootstrap(Some(&cursor_at(996, b'a')))
+        .await
+        .unwrap();
+    contiguous("bootstrapping").await;
+    fixture.chain_client.fork_above(994, b'b');
+    fixture
+        .detector
+        .inspect(&fixture.header(997), fixture.safe_head)
+        .await
+        .unwrap();
+    fixture.commit([997]).await;
+    contiguous("committing across a fork").await;
 }
 
 // The extra header anchors a fork immediately above the safe head.

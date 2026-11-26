@@ -1202,9 +1202,38 @@ loop and gives it `SHUTDOWN_DRAIN` to finish its iteration. Not here: the token-
 and the Hub's hand-off of newly listed tokens to it, which arrive with enrichment in Phase 4.
 
 **Gate:** the Rust indexer walks from Main Spoke genesis into a _fresh_ pair of databases while the
-TypeScript one walks into the existing pair, then `SELECT`-level diffs of `spoke_events_current`,
-`hub_events_current`, `user_positions_current` and `hub_assets_current` at the same block. Zero rows
-of difference. Plus the reorg harness driven through every window shape the loop can leave behind.
+TypeScript one walks into another, then `SELECT`-level diffs of `spoke_events_current`,
+`hub_events_current`, `user_positions_as_of`, `hub_assets_as_of` and `spoke_reserves_as_of` at the
+same block. Zero rows of difference. Plus the reorg harness driven through every window shape the
+loop can leave behind.
+
+**Both halves passed.** The two indexers ran side by side from block 24,720,891 to the tip at
+26,502,254, each into its own fresh ClickHouse and Postgres databases, with no warning from
+either. Both then drained on SIGTERM. Compared at block 26,501,998, settled under both cursors:
+**79,928 Spoke and 182,703 Hub events, 13,547 positions, 18 Hub assets and 15 reserves, and
+0 rows of difference** in either direction. Fourteen of the twenty-one followed events occur on
+mainnet in that range; the golden corpus covers the other seven. The folds are compared through
+the `*_as_of` views, cut at the block's timestamp, rather than through the tables behind them,
+whose merge state differs between two writers. The plan named `user_positions_current` and
+`hub_assets_current`, neither of which exists.
+
+The comparison is a multiset difference both ways, counting duplicates, with `body` compared as a
+string, so a reordered key or a changed escape is a difference. One column is left out:
+`version`, which each writer takes from its own clock at write time, so the two sides cannot
+agree on it. Token metadata and prices are not compared, because they arrive in Phase 4.
+
+**The comparator is live, and each control was run at the same block.** A copy of the candidate,
+refolded from its ledgers, compares clean. Then four perturbations of that copy are each reported:
+- a deleted Supply, reported in the Spoke ledger and in the position it fed;
+- one supplied share added to one position;
+- a body given a space after its first key, which leaves the JSON's meaning unchanged;
+- a `NULL` topic written as an empty string.
+
+The harness is a local tool and stays out of the tree, as the API's did.
+
+The reorg half, [#89](https://github.com/EugeneButusov/aave-v4-positions/pull/89), is the detector's case driven through the six shapes the loop can put the window in,
+asserting no gap after each. The inventory against the TypeScript specs found that case ported
+weaker than its original, and nothing else missing.
 
 ### Phase 4 — enrichment, prices, the CLIs, then ship the indexer
 

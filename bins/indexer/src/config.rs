@@ -6,6 +6,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use aave::MAIN_SPOKE_ON_ETHEREUM as FOLLOWED;
+use aave::events::Contract;
 use alloy_primitives::Address;
 use env::{Env, Invalid, Source};
 use units::ChainId;
@@ -38,7 +39,7 @@ impl Config {
         Self::parse(&Source::from_env().read(env!("CARGO_MANIFEST_DIR")))
     }
 
-    fn parse(env: &Env) -> Result<Self, Invalid> {
+    pub(crate) fn parse(env: &Env) -> Result<Self, Invalid> {
         Ok(Self {
             telemetry: telemetry::Settings::read(env)?,
             host: env.address("HOST", "0.0.0.0")?,
@@ -65,6 +66,10 @@ impl Config {
             postgres_url: postgres::read_url(env)?,
             postgres_limits: postgres::Limits::read(env)?,
         })
+    }
+
+    pub(crate) fn contracts(&self) -> [(Contract, Address); 2] {
+        [(Contract::Spoke, self.spoke), (Contract::Hub, self.hub)]
     }
 }
 
@@ -120,6 +125,29 @@ mod tests {
         assert_eq!(
             format!("{:#x}", config.hub),
             "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9"
+        );
+    }
+
+    #[test]
+    fn follows_the_spoke_then_the_hub_at_the_configured_addresses() {
+        let config = configured(&[
+            (
+                "MAIN_SPOKE_ADDRESS",
+                "0x1111111111111111111111111111111111111111",
+            ),
+            (
+                "CORE_HUB_ADDRESS",
+                "0x2222222222222222222222222222222222222222",
+            ),
+        ])
+        .expect("both addresses should parse");
+
+        assert_eq!(
+            config.contracts(),
+            [
+                (Contract::Spoke, Address::repeat_byte(0x11)),
+                (Contract::Hub, Address::repeat_byte(0x22)),
+            ]
         );
     }
 

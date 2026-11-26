@@ -1,9 +1,10 @@
 //! Follows the chain into the two databases, and serves its probes.
 //!
-//! Boot order is config, telemetry, dependencies, listener. The loop waits for the event processors:
-//! a cursor advanced with nothing to process would pass every event below it unread.
+//! Boot order is config, telemetry, dependencies, loop, listener. Shutdown stops the listener first,
+//! then the loop, which gets [`SHUTDOWN_DRAIN`] to finish its iteration.
 
 mod config;
+mod pipeline;
 mod probes;
 mod stall;
 
@@ -12,7 +13,10 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use indexing::IndexerStatus;
+use aave::events::AaveEventProcessor;
+use aave_clickhouse::ClickHouseEventLedger;
+use chain::JsonRpc;
+use indexing::{BlockProcessor, Indexer, LogReader, SHUTDOWN_DRAIN};
 use ops::{ShutdownFlag, Uptime};
 
 use config::Config;
@@ -40,7 +44,7 @@ async fn main() -> ExitCode {
 
 async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let config = Config::from_env()?;
-    let telemetry = telemetry::init(config.telemetry)?;
+    let telemetry = telemetry::init(config.telemetry.clone())?;
 
     // Hosts, never URLs: a provider's URL carries its key.
     tracing::info!(
@@ -54,13 +58,46 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
         spoke = %config.spoke,
         hub = %config.hub,
         autostart = config.autostart,
-        "indexer configured; no event processors yet, so the loop does not start"
+        "indexer configured"
     );
 
-    let status = Arc::new(IndexerStatus::new());
+    let clickhouse = clickhouse_client::build_client(config.clickhouse.clone())?;
+    let meter = opentelemetry::global::meter(telemetry::SCOPE);
+    let chain = Arc::new(JsonRpc::connect(&config.rpc, &meter)?);
+    let logs: Arc<dyn LogReader> = Arc::clone(&chain) as _;
+    let processors = config
+        .contracts()
+        .map(|(contract, address)| -> Box<dyn BlockProcessor> {
+            Box::new(AaveEventProcessor::new(
+                config.chain.chain_id,
+                contract,
+                address,
+                Arc::clone(&logs),
+                Box::new(ClickHouseEventLedger::new(clickhouse.clone(), contract)),
+            ))
+        });
+    let pipeline = pipeline::assemble(
+        config.chain,
+        config.finality_depth,
+        chain,
+        postgres::build_pool(&config.postgres_url, config.postgres_limits)?,
+        processors.into(),
+        &meter,
+    );
+    let status = Arc::clone(&pipeline.status);
+    let cancel = pipeline.cancel.clone();
+    let mut indexer = Indexer::new(pipeline);
+    let indexing = if config.autostart {
+        Some(tokio::spawn(async move { indexer.run().await }))
+    } else {
+        tracing::info!("autostart disabled; not indexing");
+        None
+    };
+
     let probes = probes::dependencies(
         Stall::new(status, config.stall_threshold),
-        clickhouse_client::build_client(config.clickhouse)?,
+        clickhouse,
+        // Not a clone of the loop's pool: a probe queued behind it reports a busy database as down.
         postgres::probe_pool(&config.postgres_url, config.postgres_limits)?,
     );
 
@@ -74,6 +111,15 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     axum::serve(listener, router)
         .with_graceful_shutdown(async move { shutdown.on_signal(config.grace).await })
         .await?;
+
+    cancel.cancel();
+    if let Some(indexing) = indexing
+        && tokio::time::timeout(SHUTDOWN_DRAIN, indexing)
+            .await
+            .is_err()
+    {
+        tracing::warn!(drain = ?SHUTDOWN_DRAIN, "the loop did not finish its iteration in time");
+    }
 
     tracing::info!("shutdown complete");
 
@@ -90,6 +136,7 @@ mod tests {
 
     use std::time::Duration;
 
+    use indexing::IndexerStatus;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;

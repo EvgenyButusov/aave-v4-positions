@@ -22,7 +22,7 @@ use crate::refusal::{detail, is_range_rejection};
 /// Both chain ports over one provider list, so the loop and a processor fail over together.
 #[derive(Clone)]
 pub struct JsonRpc {
-    client: RpcClient,
+    pub(crate) client: RpcClient,
 }
 
 /// What a node answered that no node should.

@@ -60,12 +60,12 @@ impl Answer {
 }
 
 /// The contract's answer rather than the node's, so every provider would give the same one.
-fn is_revert(error: &ErrorPayload) -> bool {
+pub(crate) fn is_revert(error: &ErrorPayload) -> bool {
     error.message.contains("execution reverted")
         || error.message.contains("gas required exceeds allowance")
 }
 
-fn failure(error: &TransportError) -> &'static str {
+pub(crate) fn failure(error: &TransportError) -> &'static str {
     match error {
         RpcError::Transport(TransportErrorKind::Custom(source)) => {
             match source.downcast_ref::<reqwest::Error>() {

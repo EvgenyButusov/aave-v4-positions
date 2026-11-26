@@ -12,7 +12,10 @@ mod fixtures;
 mod processors;
 mod reorg;
 
-pub use chain::{BlockHeader, ChainClient, Error as ChainError, LogFilter, LogReader, RawLog};
+pub use chain::{
+    Absence, BlockHeader, ChainClient, Erc20MetadataReader, Error as ChainError, Field, LogFilter,
+    LogReader, RawLog, TokenMetadata,
+};
 pub use cursor::{
     Cursor, CursorStore, Error, PostgresCursorStore, PostgresSyncStatusStore, SyncStatus,
     SyncStatusStore,

@@ -101,7 +101,8 @@ crates/
   aave/                     vendored ABIs + sol! bindings (see Risk 1), the deployment followed,
                             decoders, the port the two ledgers are written through, and the
                             processor that reads a range into one
-  aave-clickhouse/          the ClickHouse adapter behind that port   ← new
+  aave-clickhouse/          the ClickHouse adapter behind that port, and the listings
+                            `token-metadata` asks the fold for   ← new
   aave-positions/           folds, read stores, valuation (the math)
   token-metadata/           enrichment: ERC-20 symbol/name
   prices/                   enrichment: the Spoke oracle
@@ -123,7 +124,9 @@ they share could hold either: `clickhouse`, `postgres` and `indexing` do not lin
 `test-db` is a database. The workaround goes when the upstream fix does; the writer stays.
 `crates/aave-clickhouse` is a fourth: the ledgers' ClickHouse adapter, kept out of `aave` so that
 linking the bindings links no storage, and out of `bins/indexer` so that `aave-positions`' store
-suites can seed the fold through it.
+suites can seed the fold through it. `TokenListings`' adapter lives there too: its query is
+knowledge of `hub_asset_state` and its suite seeds through the Hub ledger, so in `token-metadata`
+it would have been the third copy of the migrated-database scaffolding.
 
 The `indexing/` line lost its alloy adapters: the ports, the loop and the durable stores are inside
 that crate and the adapters are not, for the reason four paragraphs below. Phase 3a is where that
@@ -966,7 +969,7 @@ is how the 503 turned out to be the report verbatim with no framework envelope �
 TypeScript test pins.
 
 Then the three read dimensions the route joins: `crates/token-metadata` and `crates/prices` (read
-halves — `put`, the enrichment sweep and the oracle reader stay with Phases 3 and 4) and
+halves — `put`, the enrichment sweep and the oracle reader stay with Phase 4) and
 `crates/indexing`'s `SyncStatusStore`. Each is a port, one Postgres adapter and the port's specs as
 an executable contract, as #45 established. Two things the TypeScript needs discipline for became
 types: a price is keyed by a `ReserveKey { spoke, reserve_id }` rather than by a lower-cased
@@ -1266,6 +1269,16 @@ Three differences are deliberate:
 - The fallback cannot fail on a second call, because there isn't one.
 - A field that never reached the token is described by its kind and never by the error's text,
   which for a transport failure carries the provider's URL.
+
+**Then the two writes enrichment needs.** `TokenMetadataStore::put` is one statement whatever
+the batch, one array per column through `UNNEST` as the
+[sqlx FAQ](https://github.com/launchbadge/sqlx/blob/main/FAQ.md) gives for a bulk insert, so a
+refused batch writes nothing. `TokenListings` asks the TypeScript's question unchanged, so the
+`listed_tokens` projection still answers it; a case reads `system.query_log` to prove that.
+- Adding `sign > 0` changes no result until a merge, so only the projection case notices it. A
+  net-sign `HAVING`, the fix that would actually drop a reorged listing, fails the retraction case.
+- `IS NOT NULL` is pruning only: the column decodes as `Option<String>` and the NULLs are dropped
+  in Rust either way.
 
 **Gate:** Rust `reconcile:hub` and `reconcile:positions` report zero drift against the fold the
 _TypeScript_ indexer produced. That is the strongest cross-check available anywhere in this migration,

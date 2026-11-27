@@ -26,11 +26,13 @@ name = "aave-clickhouse"
 version = "0.0.0"
 dependencies = [
  "aave",
+ "alloy-primitives",
  "async-trait",
  "clickhouse-client",
  "migrations",
  "serde",
  "serde_json",
+ "token-metadata",
  "tokio",
  "units",
 ]
@@ -4109,9 +4111,7 @@ version = "0.0.0"
 dependencies = [
  "alloy-primitives",
  "async-trait",
- "migrations",
  "postgres",
- "refinery-core",
  "test-db",
  "thiserror",
  "tokio",

@@ -7,7 +7,8 @@ use serde_json::Value;
 use super::ClickHouseEventLedger;
 use super::row::Row;
 
-use harness::{Ledgers, at, empty_database, live, raw};
+use crate::harness::{Ledgers, at, empty_database};
+use harness::{live, raw};
 
 #[test]
 fn writes_each_captured_log_as_the_row_the_typescript_wrote_for_it() {

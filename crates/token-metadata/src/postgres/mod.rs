@@ -1,6 +1,6 @@
 //! The Postgres implementation of [`TokenMetadataStore`](crate::TokenMetadataStore).
 //!
-//! Every case here is the port's, in `conformance`, run through `Harness`.
+//! The port's cases are in `conformance`; what is left here reads the columns the port cannot.
 
 #[cfg(test)]
 mod harness;

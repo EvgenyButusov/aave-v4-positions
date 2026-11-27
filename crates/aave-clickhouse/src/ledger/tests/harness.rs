@@ -1,21 +1,12 @@
-//! Both ledgers over a database of a case's own, migrated with the corpus `bins/migrate` applies,
-//! so every append also runs the fold's materialized views over what it wrote.
+//! What the ledger cases read back: the view's live rows, and the table's own.
 
-use aave::events::{Contract, DecodedEvent, EventLedger as _};
-use clickhouse_client::clickhouse::{self, Client};
-use clickhouse_client::{Config, TransportSecurity, build_client};
+use aave::events::Contract;
+use clickhouse_client::clickhouse;
 use serde::Deserialize;
 use serde_json::Value;
-use units::ChainId;
 
-use crate::ledger::{ClickHouseEventLedger, table, view};
-
-pub(super) struct Ledgers {
-    client: Client,
-    pub(super) chain_id: ChainId,
-    pub(super) spoke: ClickHouseEventLedger,
-    pub(super) hub: ClickHouseEventLedger,
-}
+use crate::harness::Ledgers;
+use crate::ledger::{table, view};
 
 #[derive(clickhouse::Row, Deserialize)]
 pub(super) struct Live {
@@ -23,67 +14,6 @@ pub(super) struct Live {
     pub(super) log_index: u32,
     pub(super) event_name: String,
     pub(super) body: String,
-}
-
-impl Ledgers {
-    /// Dropped and recreated rather than reused: cases run at once against one server, and every
-    /// migration is `IF NOT EXISTS`, so a database left behind would hide an edited one.
-    pub(super) async fn new(case: &str) -> Self {
-        let client = empty_database(case).await;
-        for migration in migrations::CLICKHOUSE
-            .iter()
-            .flat_map(|source| source.files)
-        {
-            client.query(migration.sql).execute().await.unwrap();
-        }
-
-        Self {
-            spoke: ClickHouseEventLedger::new(client.clone(), Contract::Spoke),
-            hub: ClickHouseEventLedger::new(client.clone(), Contract::Hub),
-            chain_id: aave::MAIN_SPOKE_ON_ETHEREUM.chain_id,
-            client,
-        }
-    }
-
-    /// What the processor does with a dispatched range: retract it, then write it again.
-    pub(super) async fn index(
-        &self,
-        contract: Contract,
-        from: u64,
-        to: u64,
-        events: &[DecodedEvent],
-    ) {
-        let ledger = self.ledger(contract);
-        ledger.revert(self.chain_id, from, to).await.unwrap();
-        ledger.append(events).await.unwrap();
-    }
-
-    fn ledger(&self, contract: Contract) -> &ClickHouseEventLedger {
-        match contract {
-            Contract::Spoke => &self.spoke,
-            Contract::Hub => &self.hub,
-        }
-    }
-}
-
-pub(super) async fn empty_database(case: &str) -> Client {
-    let database = format!("rust_events_{case}");
-    let bootstrap = build_client(config("default")).unwrap();
-    for statement in [
-        format!("DROP DATABASE IF EXISTS {database} SYNC"),
-        format!("CREATE DATABASE {database}"),
-    ] {
-        bootstrap.query(&statement).execute().await.unwrap();
-    }
-
-    build_client(config(&database)).unwrap()
-}
-
-/// `event` moved to `block` and `log_index`, its body untouched so the fold's views still accept it.
-pub(super) fn at(mut event: DecodedEvent, block: u64, log_index: u32) -> DecodedEvent {
-    event.block_number = block;
-    event.log_index = log_index;
-    event
 }
 
 pub(super) async fn live(ledgers: &Ledgers, contract: Contract) -> Vec<Live> {
@@ -115,15 +45,4 @@ pub(super) async fn raw(ledgers: &Ledgers, contract: Contract) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
-}
-
-fn config(database: &str) -> Config {
-    Config {
-        url: std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".to_owned()),
-        transport_security: TransportSecurity::AllowInsecureHttp,
-        database: database.to_owned(),
-        user: std::env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".to_owned()),
-        password: std::env::var("CLICKHOUSE_PASSWORD").unwrap_or_default(),
-        max_execution: std::time::Duration::from_secs(60),
-    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "aave-clickhouse"
-description = "The ClickHouse adapters behind the ports `aave` defines"
+description = "The ClickHouse adapters over the Aave ledgers and the fold they feed"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -8,8 +8,10 @@ publish.workspace = true
 [dependencies]
 aave.workspace = true
 clickhouse-client.workspace = true
+token-metadata.workspace = true
 units.workspace = true
 
+alloy-primitives = { version = "1.7.3", default-features = false, features = ["std"] }
 async-trait = "0.1.92"
 # `Row`, the encoding a ledger append writes.
 serde = { version = "1.0.228", features = ["derive"] }

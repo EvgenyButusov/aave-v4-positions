@@ -26,7 +26,7 @@ use ops::{ShutdownFlag, Uptime};
 use postgres::ProbePool;
 use prices::{Error as PriceError, ReserveKey, ReservePrice, ReservePriceStore};
 use time::OffsetDateTime;
-use token_metadata::{Error as LabelError, TokenLabel, TokenMetadataStore};
+use token_metadata::{Error as LabelError, TokenLabel, TokenMetadataRow, TokenMetadataStore};
 use tower::ServiceExt;
 use units::ChainId;
 
@@ -212,6 +212,10 @@ struct Labels(HashMap<Address, TokenLabel>);
 impl TokenMetadataStore for Labels {
     async fn labels(&self, _chain_id: ChainId) -> Result<HashMap<Address, TokenLabel>, LabelError> {
         Ok(self.0.clone())
+    }
+
+    async fn put(&self, _rows: &[TokenMetadataRow]) -> Result<(), LabelError> {
+        unreachable!("the API never writes token metadata")
     }
 }
 

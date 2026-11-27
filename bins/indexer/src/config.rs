@@ -29,6 +29,7 @@ pub(crate) struct Config {
     pub(crate) clickhouse: clickhouse_client::Config,
     pub(crate) postgres_url: String,
     pub(crate) postgres_limits: postgres::Limits,
+    pub(crate) enrichment: token_metadata::EnrichmentSettings,
 }
 
 impl Config {
@@ -65,6 +66,7 @@ impl Config {
             clickhouse: clickhouse_client::Config::read(env)?,
             postgres_url: postgres::read_url(env)?,
             postgres_limits: postgres::Limits::read(env)?,
+            enrichment: token_metadata::EnrichmentSettings::read(env)?,
         })
     }
 
@@ -118,6 +120,8 @@ mod tests {
         assert_eq!(config.rpc.timeout, Duration::from_secs(10));
         assert_eq!(config.stall_threshold, Duration::from_secs(300));
         assert!(config.autostart);
+        assert_eq!(config.enrichment.retry_delay, Duration::from_secs(60));
+        assert_eq!(config.enrichment.concurrency, 4);
         assert_eq!(
             format!("{:#x}", config.spoke),
             "0x94e7a5dcbe816e498b89ab752661904e2f56c485"

@@ -77,6 +77,17 @@ pub enum Reason {
     OutOfRange(&'static str),
 }
 
+impl DecodedEvent {
+    /// The ERC-20 a Hub `AddAsset` listed, from its indexed `underlying`. No other event lists one.
+    #[must_use]
+    pub fn listed_token(&self) -> Option<Address> {
+        (self.event_name == "AddAsset")
+            .then_some(self.topics[1])
+            .flatten()
+            .map(Address::from_word)
+    }
+}
+
 impl Decoder {
     #[must_use]
     pub fn new(chain_id: ChainId, contract: Contract, address: Address) -> Self {

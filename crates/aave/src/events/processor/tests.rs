@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use alloy_primitives::Address;
 use async_trait::async_trait;
 use indexing::{BlockProcessor as _, ChainError, LogFilter, LogReader, Outcome, RawLog};
 use tokio_util::sync::CancellationToken;
@@ -74,6 +75,9 @@ impl EventLedger for RecordingLedger {
     }
 }
 
+/// Each listing heard, with how many writes had landed by then.
+type Heard = Arc<Mutex<Vec<(usize, Vec<Address>)>>>;
+
 struct Case {
     processor: AaveEventProcessor,
     chain: Arc<ScriptedChain>,
@@ -108,6 +112,16 @@ impl Case {
         self.processor
             .on_block_range(from, to, &CancellationToken::new())
             .await
+    }
+
+    fn listening(mut self) -> (Self, Heard) {
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let (writes, record) = (Arc::clone(&self.ledger.writes), Arc::clone(&heard));
+        self.processor = self.processor.on_listed(move |tokens| {
+            let landed = writes.lock().unwrap().len();
+            record.lock().unwrap().push((landed, tokens.to_vec()));
+        });
+        (self, heard)
     }
 
     fn writes(&self) -> Vec<Write> {
@@ -287,4 +301,41 @@ fn is_named_for_the_contract_and_its_address() {
     let case = Case::new(Contract::Spoke, Serves::Down);
 
     assert_eq!(case.processor.name(), "aave-spoke(0x94e7a5dc)");
+}
+
+const WETH: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+
+#[tokio::test]
+async fn tells_the_listener_what_the_hub_listed_once_it_is_written() {
+    let (case, heard) = Case::new(Contract::Hub, Serves::Logs(captured(Contract::Hub))).listening();
+    let unheard = Case::new(Contract::Hub, Serves::Logs(captured(Contract::Hub)));
+
+    assert_eq!(case.index(1_000, 1_999).await.unwrap(), Outcome::Ok);
+    assert_eq!(unheard.index(1_000, 1_999).await.unwrap(), Outcome::Ok);
+
+    assert_eq!(*heard.lock().unwrap(), [(2, vec![WETH.parse().unwrap()])]);
+    assert_eq!(case.writes(), unheard.writes());
+}
+
+#[tokio::test]
+async fn says_nothing_of_a_range_that_listed_nothing() {
+    let (case, heard) = Case::new(Contract::Hub, Serves::Logs(Vec::new())).listening();
+
+    assert_eq!(case.index(1_000, 1_999).await.unwrap(), Outcome::Ok);
+
+    assert!(heard.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn says_nothing_of_a_listing_whose_write_was_refused() {
+    let ledger = RecordingLedger {
+        refuses: true,
+        ..RecordingLedger::default()
+    };
+    let (case, heard) =
+        Case::over(Contract::Hub, Serves::Logs(captured(Contract::Hub)), ledger).listening();
+
+    assert!(case.index(1_000, 1_999).await.is_err());
+
+    assert!(heard.lock().unwrap().is_empty());
 }

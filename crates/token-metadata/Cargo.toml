@@ -1,26 +1,38 @@
 [package]
 name = "token-metadata"
-description = "What an ERC-20 calls itself: the labels a page shows, and where enrichment writes them"
+description = "What an ERC-20 calls itself: the labels a page shows, and the processor that fills them in"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+env.workspace = true
+indexing.workspace = true
+postgres.workspace = true
+units.workspace = true
+
 alloy-primitives = { version = "1.6.1", default-features = false, features = ["std"] }
 # `async fn` in a trait is still not dyn compatible, and the composition root
 # wants a trait object. Same trade `aave-positions` documents.
 async-trait = "0.1.92"
-postgres.workspace = true
-units.workspace = true
+# `buffer_unordered`, the bound on how many tokens are read at once.
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
+thiserror = "2.0.19"
+# `spawn` for the run a dispatch starts, and its clock for the back-off.
+tokio = { version = "1.53.1", default-features = false, features = ["rt", "time"] }
 # The `Row` a query hands back and the error it refuses with. Named here rather
 # than reached through `postgres`, which exports what its own signatures
 # mention and neither of these appears in one.
 tokio-postgres = "0.7.18"
-thiserror = "2.0.19"
+tokio-util = { version = "0.7.19", default-features = false }
+tracing = "0.1.44"
 
 [dev-dependencies]
 test-db.workspace = true
-tokio = { version = "1.53.1", features = ["macros", "rt"] }
+test-tracing.workspace = true
+# `start_paused`, so a back-off is stepped over rather than waited out.
+tokio = { version = "1.53.1", features = ["macros", "rt", "sync", "test-util"] }
+tracing-subscriber = "0.3.23"
 
 [lints]
 workspace = true

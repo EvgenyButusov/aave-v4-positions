@@ -1280,6 +1280,33 @@ refused batch writes nothing. `TokenListings` asks the TypeScript's question unc
 - `IS NOT NULL` is pruning only: the column decodes as `Option<String>` and the NULLs are dropped
   in Rust either way.
 
+**Then the processor.** `TokenEnrichmentProcessor` sits in `token-metadata` beside its three ports,
+and `bins/indexer` registers it after the Spoke and Hub processors. A dispatch never awaits: it
+decides whether to start a run, spawns it, and answers `Ok`. The Hub processor hands each `AddAsset`
+it has written to `PendingTokens` through a closure, so `aave` and `token-metadata` stay unaware of
+each other. The underlying comes from the event's indexed topic, not from its JSON body.
+`TOKEN_ENRICHMENT_RETRY_MS` and `TOKEN_ENRICHMENT_CONCURRENCY` are read by `token-metadata` itself,
+with the TypeScript's defaults and bounds.
+
+Three differences are deliberate:
+- **A run starts owing a full check and backing off.** Only a run that closes every gap clears
+  both, so a run that panics after draining the buffer is retried after the delay, against the
+  whole set. Single flight is the run's `JoinHandle`, so a panic releases it too.
+- **At most `TOKEN_ENRICHMENT_CONCURRENCY` reads are in flight at once** (`buffer_unordered`), where
+  the TypeScript waited for each batch of that size to finish before starting the next.
+- **The back-off log carries only the error's own message.** A transport error's source names the
+  provider's URL.
+
+The two mutants the design notes name were re-run. Awaiting inside the dispatch fails the two
+cases that stall the listings and the store. Writing a row for an unreached token fails
+`leaves_the_gap_open_when_any_call_never_reached_the_token`.
+
+**Enrichment gate.** The Rust indexer was resumed on `gate_rs` from its cursor at 26,502,263, which
+moved its event tables past the Phase 3b comparison block. Its first dispatch read all 18 listed
+tokens at head 26,507,110. `token_metadata` matches `gate_ts`, which the TypeScript wrote, on every
+column except `fetched_at` and `fetched_at_block`: 18 rows, no differences. Two controls on the
+Rust side, one symbol changed and one row dropped, were both caught.
+
 **Gate:** Rust `reconcile:hub` and `reconcile:positions` report zero drift against the fold the
 _TypeScript_ indexer produced. That is the strongest cross-check available anywhere in this migration,
 because each half was built by a different implementation. Then deploy the Rust indexer, soak against

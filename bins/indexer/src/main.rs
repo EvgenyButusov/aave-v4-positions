@@ -6,6 +6,7 @@
 mod config;
 mod pipeline;
 mod probes;
+mod processors;
 mod stall;
 
 use std::error::Error;
@@ -13,11 +14,11 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use aave::events::AaveEventProcessor;
-use aave_clickhouse::ClickHouseEventLedger;
+use aave_clickhouse::{ClickHouseEventLedger, ClickHouseTokenListings};
 use chain::JsonRpc;
-use indexing::{BlockProcessor, Indexer, LogReader, SHUTDOWN_DRAIN};
+use indexing::{Indexer, LogReader, SHUTDOWN_DRAIN};
 use ops::{ShutdownFlag, Uptime};
+use token_metadata::{PendingTokens, PostgresTokenMetadataStore, TokenEnrichmentProcessor};
 
 use config::Config;
 use stall::Stall;
@@ -65,23 +66,31 @@ async fn run(uptime: Uptime) -> Result<(), Box<dyn Error>> {
     let meter = opentelemetry::global::meter(telemetry::SCOPE);
     let chain = Arc::new(JsonRpc::connect(&config.rpc, &meter)?);
     let logs: Arc<dyn LogReader> = Arc::clone(&chain) as _;
-    let processors = config
-        .contracts()
-        .map(|(contract, address)| -> Box<dyn BlockProcessor> {
-            Box::new(AaveEventProcessor::new(
-                config.chain.chain_id,
-                contract,
-                address,
-                Arc::clone(&logs),
-                Box::new(ClickHouseEventLedger::new(clickhouse.clone(), contract)),
-            ))
-        });
+    let postgres = postgres::build_pool(&config.postgres_url, config.postgres_limits)?;
+    let listed = Arc::new(PendingTokens::default());
+    let mut processors = processors::ingestion(
+        config.chain.chain_id,
+        config.contracts(),
+        &logs,
+        |contract| Box::new(ClickHouseEventLedger::new(clickhouse.clone(), contract)),
+        &listed,
+    );
+    // Last, so a listing the Hub writes is read in the same dispatch.
+    processors.push(Box::new(TokenEnrichmentProcessor::new(
+        config.chain.chain_id,
+        config.enrichment,
+        Box::new(ClickHouseTokenListings::new(clickhouse.clone())),
+        listed,
+        Box::new(PostgresTokenMetadataStore::new(postgres.clone())),
+        Arc::clone(&chain) as _,
+        Arc::clone(&chain) as _,
+    )));
     let pipeline = pipeline::assemble(
         config.chain,
         config.finality_depth,
         chain,
-        postgres::build_pool(&config.postgres_url, config.postgres_limits)?,
-        processors.into(),
+        postgres,
+        processors,
         &meter,
     );
     let status = Arc::clone(&pipeline.status);

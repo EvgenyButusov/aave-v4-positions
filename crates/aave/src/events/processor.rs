@@ -9,7 +9,9 @@ use indexing::{BlockProcessor, ChainError, Failure, LogFilter, LogReader, Outcom
 use tokio_util::sync::CancellationToken;
 use units::ChainId;
 
-use crate::events::{Contract, Decoder, EventLedger};
+use crate::events::{Contract, DecodedEvent, Decoder, EventLedger};
+
+type Listener = dyn Fn(&[Address]) + Send + Sync;
 
 /// Reads one contract's followed events over the dispatched range and writes them to its ledger.
 /// A second Spoke is a second processor with its own address and ledger.
@@ -21,6 +23,7 @@ pub struct AaveEventProcessor {
     decoder: Decoder,
     logs: Arc<dyn LogReader>,
     ledger: Box<dyn EventLedger>,
+    listener: Option<Box<Listener>>,
 }
 
 impl AaveEventProcessor {
@@ -41,6 +44,28 @@ impl AaveEventProcessor {
             decoder: Decoder::new(chain_id, contract, address),
             logs,
             ledger,
+            listener: None,
+        }
+    }
+
+    /// Told the ERC-20s a range listed, once they are written. Must not block: it runs inside the
+    /// dispatch.
+    #[must_use]
+    pub fn on_listed(mut self, listener: impl Fn(&[Address]) + Send + Sync + 'static) -> Self {
+        self.listener = Some(Box::new(listener));
+        self
+    }
+
+    fn tell_listener(&self, events: &[DecodedEvent]) {
+        let Some(listener) = &self.listener else {
+            return;
+        };
+        let listed: Vec<Address> = events
+            .iter()
+            .filter_map(DecodedEvent::listed_token)
+            .collect();
+        if !listed.is_empty() {
+            listener(&listed);
         }
     }
 }
@@ -98,6 +123,7 @@ impl BlockProcessor for AaveEventProcessor {
         if !events.is_empty() {
             tracing::info!(processor = %self.name, from, to, events = events.len(), "stored events");
         }
+        self.tell_listener(&events);
         Ok(Outcome::Ok)
     }
 

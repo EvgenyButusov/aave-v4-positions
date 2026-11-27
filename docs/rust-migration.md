@@ -1289,9 +1289,9 @@ each other. The underlying comes from the event's indexed topic, not from its JS
 with the TypeScript's defaults and bounds.
 
 Three differences are deliberate:
-- **A full check stays owed for the whole run.** Only a run that closes every gap clears it, so a
-  run that panics after draining the buffer still leaves the next to ask for the whole set. Single
-  flight is the run's `JoinHandle`, so a panic releases it too.
+- **A run starts owing a full check and backing off.** Only a run that closes every gap clears
+  both, so a run that panics after draining the buffer is retried after the delay, against the
+  whole set. Single flight is the run's `JoinHandle`, so a panic releases it too.
 - **At most `TOKEN_ENRICHMENT_CONCURRENCY` reads are in flight at once** (`buffer_unordered`), where
   the TypeScript waited for each batch of that size to finish before starting the next.
 - **The back-off log carries only the error's own message.** A transport error's source names the

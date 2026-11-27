@@ -46,11 +46,11 @@ struct Enrichment {
     state: Mutex<State>,
 }
 
+/// A run starts owing a full check and backing off, and only one that closes every gap clears
+/// both: a run that panics after draining is then retried, after the delay, against the whole set.
 struct State {
     run: Option<JoinHandle<()>>,
     retry_after: Option<Instant>,
-    /// Set for the whole of a run and cleared only by one that closes every gap, so a run that
-    /// panics after draining still leaves the next to ask for the whole set.
     full_check_owed: bool,
 }
 
@@ -92,6 +92,7 @@ impl TokenEnrichmentProcessor {
         }
 
         let full = std::mem::replace(&mut state.full_check_owed, true);
+        state.retry_after = Some(Instant::now() + self.0.settings.retry_delay);
         let (enrichment, cancel) = (Arc::clone(&self.0), cancel.clone());
         state.run = Some(tokio::spawn(
             async move { enrichment.run(full, &cancel).await }.with_current_subscriber(),
@@ -235,7 +236,9 @@ impl Enrichment {
     }
 
     fn caught_up(&self) {
-        self.state().full_check_owed = false;
+        let mut state = self.state();
+        state.full_check_owed = false;
+        state.retry_after = None;
     }
 
     /// The top-level message only: a transport error's source carries the provider's URL.

@@ -315,17 +315,20 @@ async fn starts_nothing_while_a_run_is_in_flight() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn runs_again_after_a_run_panicked_and_still_asks_for_everything() {
+async fn backs_off_after_a_run_panicked_then_asks_for_everything() {
     let case = Case::new();
     case.caught_up_on(&[USDC]).await;
     case.pending.add(&[WETH]);
     case.reader.panics.store(true, Ordering::SeqCst);
     case.dispatch().await;
-
     case.reader.panics.store(false, Ordering::SeqCst);
     case.listing(&[USDC, WETH]);
-    case.dispatch().await;
 
+    case.dispatch().await;
+    assert_eq!(case.listing_calls(), 1);
+
+    tokio::time::advance(RETRY).await;
+    case.dispatch().await;
     assert_eq!(case.listing_calls(), 2);
     assert!(case.stored(WETH).is_some());
 }

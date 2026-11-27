@@ -205,3 +205,28 @@ fn renders_the_types_no_followed_event_carries_as_viem_did() {
         shapes["body"].as_str().unwrap()
     );
 }
+
+#[test]
+fn names_the_token_an_add_asset_listed_and_nothing_for_any_other_event() {
+    let listed: Vec<_> = decoder(Contract::Hub)
+        .decode(
+            &golden(Contract::Hub)
+                .into_iter()
+                .map(|(log, _)| log)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+        .iter()
+        .filter_map(|event| event.listed_token().map(|token| (event.event_name, token)))
+        .collect();
+
+    assert_eq!(
+        listed,
+        [(
+            "AddAsset",
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                .parse::<Address>()
+                .unwrap()
+        )]
+    );
+}

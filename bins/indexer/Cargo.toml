@@ -15,6 +15,7 @@ indexing.workspace = true
 ops.workspace = true
 postgres.workspace = true
 telemetry.workspace = true
+token-metadata.workspace = true
 units.workspace = true
 
 # `Address` for the two contracts followed.
@@ -31,6 +32,8 @@ tracing = "0.1.44"
 tokio-util = { version = "0.7.19", default-features = false }
 
 [dev-dependencies]
+# The captured logs the ingestion case hands its processors.
+aave = { workspace = true, features = ["fixtures"] }
 # The chain and processors a pipeline case fakes.
 async-trait = "0.1.92"
 # A migrated schema per case, for the iterations a pipeline case runs.

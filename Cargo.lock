@@ -2090,6 +2090,7 @@ dependencies = [
  "telemetry",
  "test-db",
  "test-tracing",
+ "token-metadata",
  "tokio",
  "tokio-util",
  "tower",
@@ -4111,11 +4112,18 @@ version = "0.0.0"
 dependencies = [
  "alloy-primitives",
  "async-trait",
+ "env",
+ "futures-util",
+ "indexing",
  "postgres",
  "test-db",
+ "test-tracing",
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
  "units",
 ]
 

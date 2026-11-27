@@ -17,6 +17,8 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = ["s
 # The client and not `alloy-provider`, whose network types link `k256` for signing that nothing
 # here does. Four calls, each read into the fields the port keeps.
 alloy-rpc-client = { version = "2.6.1", default-features = false }
+# The three ERC-20 selectors, and the `string` and `uint256` decodes of what they return.
+alloy-sol-types = { version = "1.7.3", default-features = false, features = ["std"] }
 alloy-transport = { version = "2.6.1", default-features = false }
 # `reqwest` and not `hyper`: the `hyper` feature switches on `hyper-tls`, which links OpenSSL on
 # the musl image. No `traceparent`, which would send this trace's id to a third-party provider.

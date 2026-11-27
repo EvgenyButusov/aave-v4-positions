@@ -23,6 +23,7 @@ use url::Url;
 use crate::config::Config;
 
 use health::{Answer, Health};
+pub(crate) use health::{failure, is_revert};
 
 #[derive(Clone)]
 pub(crate) struct Providers(Arc<Members>);

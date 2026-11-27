@@ -1242,6 +1242,31 @@ The `token-metadata` and `prices` write paths, then the five CLIs: `backfill`, `
 ported in Phase 0, and the Node one is already deleted. `HubAssetStore` arrives here rather than in
 Phase 2, because `reconcile:hub` is the only thing that reads it.
 
+**The ERC-20 reader first.** `Erc20MetadataReader` is a port in `indexing`, beside the other two
+chain ports. Its `JsonRpc` adapter lives in `crates/chain`. Each field comes back as one of three
+states: a value, `Absent` when the token answered with nothing usable, or `Unreached` when the
+call never got to the token. So which reads may close a gap is a type, not a list of error names.
+Only an `Unreached` field leaves the gap open.
+- **A revert** is recognised by the same check the failover uses, so the two cannot disagree. A
+  revert settles on the first provider.
+- **The `bytes32` fallback** decodes the one return twice rather than calling twice.
+- **Labels** go through the same sanitising as the labels already stored: strip control
+  characters, trim, cap at 128 UTF-16 units without splitting a surrogate pair.
+
+Two upstream facts shaped it:
+
+| found | consequence |
+| --- | --- |
+| alloy's `uint8` decode masks the high bits of the word, where viem reads all of it | `decimals` is decoded as a `uint256` and range-checked, so a token answering 2^248 + 6 is out of range rather than 6 |
+| Rust's `trim` follows Unicode `White_Space`, which leaves out U+FEFF; JavaScript's `trim` strips it | the trim names U+FEFF too |
+
+Three differences are deliberate:
+- `gas required exceeds allowance` counts as a revert, as it already does for failover. The
+  TypeScript retried it.
+- The fallback cannot fail on a second call, because there isn't one.
+- A field that never reached the token is described by its kind and never by the error's text,
+  which for a transport failure carries the provider's URL.
+
 **Gate:** Rust `reconcile:hub` and `reconcile:positions` report zero drift against the fold the
 _TypeScript_ indexer produced. That is the strongest cross-check available anywhere in this migration,
 because each half was built by a different implementation. Then deploy the Rust indexer, soak against

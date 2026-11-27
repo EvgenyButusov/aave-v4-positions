@@ -1,7 +1,8 @@
-//! The indexer's chain ports over JSON-RPC: one ordered provider list behind both, and what it
+//! The indexer's chain ports over JSON-RPC: one ordered provider list behind all three, and what it
 //! reports about who is answering.
 
 mod config;
+mod erc20;
 mod error;
 #[cfg(test)]
 mod harness;

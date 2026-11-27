@@ -5,6 +5,7 @@
 
 mod block_header;
 mod chain_client;
+mod erc20_metadata_reader;
 mod error;
 mod log_reader;
 
@@ -13,6 +14,7 @@ mod fake;
 
 pub use block_header::BlockHeader;
 pub use chain_client::ChainClient;
+pub use erc20_metadata_reader::{Absence, Erc20MetadataReader, Field, TokenMetadata};
 pub use error::Error;
 pub use log_reader::{LogFilter, LogReader, RawLog};
 

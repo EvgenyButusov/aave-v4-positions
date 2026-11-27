@@ -3,11 +3,11 @@ use aave::events::{Contract, DecodedEvent, EventLedger as _};
 use alloy_primitives::{Address, address};
 use clickhouse_client::clickhouse::Client;
 use serde_json::json;
-use token_metadata::TokenListings as _;
+use token_metadata::{Error, TokenListings as _};
 use units::ChainId;
 
 use super::ClickHouseTokenListings;
-use crate::harness::{Ledgers, at};
+use crate::harness::{Ledgers, at, empty_database};
 
 const USDC: Address = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
 const WETH: Address = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
@@ -121,6 +121,36 @@ async fn skips_a_listing_whose_body_names_no_underlying() {
     let tokens = listed(&ledgers, &[add_asset(24_722_784, 0, 0, USDC), unnamed]).await;
 
     assert_eq!(tokens, [USDC]);
+}
+
+#[tokio::test]
+async fn refuses_a_listing_that_is_not_an_address() {
+    let ledgers = Ledgers::new("listings_malformed").await;
+    let mut garbled = add_asset(24_722_784, 0, 0, USDC);
+    garbled.body =
+        json!({ "assetId": "0", "underlying": "not-an-address", "decimals": 6 }).to_string();
+    ledgers.hub.append(&[garbled]).await.unwrap();
+
+    let refused = ClickHouseTokenListings::new(ledgers.client.clone())
+        .all(ledgers.chain_id)
+        .await;
+
+    assert!(
+        matches!(&refused, Err(Error::Malformed { column: "underlying", value, .. }) if value == "not-an-address"),
+        "{refused:?}"
+    );
+}
+
+#[tokio::test]
+async fn reports_a_query_the_server_refused_as_a_failed_read() {
+    let listings = ClickHouseTokenListings::new(empty_database("listings_unmigrated").await);
+
+    let refused = listings.all(ChainId::known(1)).await;
+
+    assert!(
+        matches!(refused, Err(Error::ListingsReadFailed(_))),
+        "{refused:?}"
+    );
 }
 
 #[tokio::test]

@@ -165,7 +165,7 @@ impl Stores {
                 hang: self.positions_hang,
                 queries: Arc::clone(&self.queries),
             }),
-            tokens: Box::new(Labels(Mutex::new(self.labels))),
+            tokens: Box::new(Labels(self.labels)),
             prices: Box::new(Prices {
                 latest: self.prices,
                 reads: Arc::clone(&self.price_reads),
@@ -206,26 +206,16 @@ impl PositionStore for Positions {
     }
 }
 
-struct Labels(Mutex<HashMap<Address, TokenLabel>>);
+struct Labels(HashMap<Address, TokenLabel>);
 
 #[async_trait::async_trait]
 impl TokenMetadataStore for Labels {
     async fn labels(&self, _chain_id: ChainId) -> Result<HashMap<Address, TokenLabel>, LabelError> {
-        Ok(self.0.lock().unwrap().clone())
+        Ok(self.0.clone())
     }
 
-    async fn put(&self, rows: &[TokenMetadataRow]) -> Result<(), LabelError> {
-        let mut labels = self.0.lock().unwrap();
-        for row in rows {
-            labels.insert(
-                row.token,
-                TokenLabel {
-                    symbol: row.symbol.clone(),
-                    name: row.name.clone(),
-                },
-            );
-        }
-        Ok(())
+    async fn put(&self, _rows: &[TokenMetadataRow]) -> Result<(), LabelError> {
+        unreachable!("the API never writes token metadata")
     }
 }
 
